@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>System2 Удирдлагын төв — v2.7.0</title>
+<title>System2 Удирдлагын төв — v2.8.0</title>
 <style>
 :root {
   --bg:#07111f; --panel:#0e1a2d; --panel2:#111f35; --line:#223653; --text:#eef5ff; --muted:#91a5c3;
@@ -112,7 +112,7 @@ tr:hover td{background:#11213a}
 .workstate{font-size:11px;font-weight:850;border-radius:999px;padding:5px 9px}
 .workstate.NOT_STARTED{background:rgba(148,163,184,.14);color:#d1d8e4}
 .workstate.IN_PROGRESS{background:rgba(120,168,255,.13);color:#a9c8ff}
-.workstate.READY_DONE{background:rgba(49,208,170,.12);color:#7be6ce}.workstate.ERROR{background:rgba(255,107,125,.14);color:#ff9bab}
+.workstate.READY_DONE{background:rgba(49,208,170,.12);color:#7be6ce}.workstate.APPROVED{background:rgba(49,208,170,.18);color:#a7f3df}.workstate.ERROR{background:rgba(255,107,125,.14);color:#ff9bab}
 .manager-empty{border:1px dashed #314765;border-radius:14px;padding:20px;color:var(--muted);text-align:center}
 @media(max-width:1000px){.refill-manager{grid-template-columns:1fr}.refill-metrics{grid-template-columns:repeat(2,1fr)}}
 
@@ -123,7 +123,7 @@ tr:hover td{background:#11213a}
 <header>
   <div>
     <h1>System2 Удирдлагын төв</h1>
-    <div class="sub">v2.7.0 · Монгол интерфэйс · Контент нөхөх + QA 85</div>
+    <div class="sub">v2.8.0 · Контент нөхөх · QA 85 · Батлах → READY</div>
   </div>
   <div class="top-right">
     <div class="badge live"><span id="feedPulse" class="pulse"></span><span id="feedText">Мэдээлэл…</span></div>
@@ -235,6 +235,8 @@ const SPECIAL_PAGES = new Set(["SENSUS_JP"]);
 const LIVE_PAGES = new Set(["ANZAAR_MN"]);
 let MODEL = [];
 let COMMAND_LOG = [];
+let REFILL_REQUESTS = [];
+let PUBLISHER_ROWS = [];
 const REFILL_TARGET_DAYS = 30;
 const REFILL_STATE_KEY = "system2_refill_tasks_v1";
 let REFILL_STATE = loadRefillState();
@@ -257,7 +259,7 @@ function clearRefillWorkState(key){
   renderRefillManager();
 }
 function workStateLabel(state){
-  return ({NOT_STARTED:"ЭХЛЭЭГҮЙ",IN_PROGRESS:"БЭЛТГЭЖ + QA ШАЛГАЖ БАЙНА",READY_DONE:"QA БАТАЛГААЖСАН",ERROR:"АЛДАА"})[state]||state;
+  return ({NOT_STARTED:"ЭХЛЭЭГҮЙ",IN_PROGRESS:"БЭЛТГЭЖ + QA ШАЛГАЖ БАЙНА",READY_DONE:"QA БАТАЛГААЖСАН",APPROVED:"НӨӨЦӨД НЭМСЭН",ERROR:"АЛДАА"})[state]||state;
 }
 function estimatePostsPerDay(windowText){
   const matches=String(windowText||"").match(/(?:[01]\d|2[0-3]):[0-5]\d/g)||[];
@@ -359,8 +361,9 @@ function buildModel(pages, pub) {
         currentError:special?"":(actionableErrors[0]?.["Error"]||""),
         currentErrors:actionableErrors, historicalErrors, notes,
         window:windowText, lastHealthCheck:p["Last Health Check"]||"",
+        fbPageId:p["Facebook Page ID"]||"",
         postsPerDay, refillNeedDays, refillNeedPosts,
-        counts, upcomingRows, recentRows
+        counts, upcomingRows, recentRows, allRows:rows
       };
     })
     .sort((a,b)=> {
@@ -443,6 +446,109 @@ function refillHtml(p){
   if(s==="SPECIAL" || s==="LIVE" || s==="PAUSED") return `<span class="muted">${refillLabel(s)}</span>`;
   return `<span class="refill-pill ${s}">${refillLabel(s)}</span>`;
 }
+function latestRefillRequest(key){
+  const list=REFILL_REQUESTS.filter(r=>r["Page Key"]===key && String(r["Request Status"]||"").toUpperCase()==="QA_PASSED");
+  return list.sort((a,b)=>Number(b.__ROW_NUMBER__)-Number(a.__ROW_NUMBER__))[0]||null;
+}
+function refillPackage(req){
+  if(!req) return null;
+  try{return JSON.parse(req["Generated Package"]||"{}");}catch(e){return null;}
+}
+function isRefillApproved(key,req){
+  if(!req) return false;
+  const prefix=`REFILL-${key}-R${req.__ROW_NUMBER__}-`;
+  return PUBLISHER_ROWS.some(r=>r["Page Key"]===key && String(r["Batch ID"]||"").startsWith(prefix));
+}
+function dateKey(d){
+  const z=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`;
+}
+function dateTimeLocal(d){
+  const z=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`;
+}
+function nextSlotDates(page,posts){
+  const bySlot={};
+  const now=new Date();
+  for(const post of posts){
+    const slot=String(post.scheduled_slot||"").trim();
+    if(!slot) continue;
+    if(!bySlot[slot]){
+      const matching=(page.allRows||[]).map(r=>dt(r["Scheduled Time"])).filter(Boolean)
+        .filter(d=>`${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`===slot)
+        .sort((a,b)=>b-a);
+      let base=matching[0]?new Date(matching[0]):new Date(now);
+      const tomorrow=new Date(now.getFullYear(),now.getMonth(),now.getDate()+1);
+      if(base<tomorrow) base=tomorrow;
+      else base=new Date(base.getFullYear(),base.getMonth(),base.getDate()+1);
+      bySlot[slot]=base;
+    }
+    post.__scheduledDate=dateKey(bySlot[slot]);
+    bySlot[slot]=new Date(bySlot[slot].getFullYear(),bySlot[slot].getMonth(),bySlot[slot].getDate()+1);
+  }
+  return posts;
+}
+function openRefillPreview(key){
+  const page=MODEL.find(p=>p.key===key), req=latestRefillRequest(key);
+  const pkg=refillPackage(req);
+  if(!page||!req||!pkg?.posts?.length){toast("QA баталгаажсан багц олдсонгүй.");return;}
+  const approved=isRefillApproved(key,req);
+  document.getElementById("detailTitle").textContent=`${page.name} — QA багц`;
+  document.getElementById("detailSub").textContent=`QA босго ${pkg.qa_threshold||85} · дундаж ${pkg.average_score||"—"} · ${pkg.count||pkg.posts.length} пост`;
+  document.getElementById("detailBody").innerHTML=`
+    <div class="info-box"><strong>${approved?"НӨӨЦӨД НЭМСЭН":"БАТЛАХАД БЭЛЭН"}</strong><br>
+    QA дахин зассан: ${pkg.rewritten_count??"—"} · Request row: ${req.__ROW_NUMBER__}</div>
+    <div class="detail-section"><div class="table-wrap"><table class="mini-table">
+      <thead><tr><th>#</th><th>Цаг</th><th>Оноо</th><th>Гарчиг</th><th>Бичвэр</th><th>QA тэмдэглэл</th></tr></thead>
+      <tbody>${pkg.posts.map((x,i)=>`<tr>
+        <td>${i+1}</td><td class="mono">${esc(x.scheduled_slot||"—")}</td>
+        <td><strong>${esc(x.score?.total??"—")}</strong></td>
+        <td>${esc(x.headline||"—")}</td>
+        <td style="white-space:normal;min-width:360px">${esc(x.post_text||"—")}</td>
+        <td style="white-space:normal;min-width:220px">${esc(x.qa_note||"—")}</td>
+      </tr>`).join("")}</tbody>
+    </table></div></div>
+    <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
+      ${approved?'<span class="workstate APPROVED">НӨӨЦӨД НЭМСЭН</span>':`<button class="btn-done" onclick="approveRefill('${esc(key)}')">БАТЛАХ → НӨӨЦӨД НЭМЭХ</button>`}
+    </div>`;
+  document.getElementById("detailModal").classList.add("open");
+}
+async function approveRefill(key){
+  const page=MODEL.find(p=>p.key===key), req=latestRefillRequest(key), pkg=refillPackage(req);
+  if(!page||!req||!pkg?.posts?.length) return;
+  if(key!=="KINO_UZ"){toast("READY approval одоогоор Кино үз workflow дээр баталгаажсан.");return;}
+  if(isRefillApproved(key,req)){toast("Энэ багц аль хэдийн нөөцөд нэмэгдсэн.");return;}
+  const posts=nextSlotDates(page,pkg.posts.map(x=>({...x})));
+  const now=dateTimeLocal(new Date());
+  const values=posts.map((x,i)=>{
+    const caption=[x.headline,x.post_text].filter(Boolean).join("\n\n");
+    const slot=String(x.scheduled_slot||"").trim();
+    const scheduled=`${x.__scheduledDate} ${slot}`;
+    const batch=`REFILL-${key}-R${req.__ROW_NUMBER__}-${x.__scheduledDate}-${slot.replace(":","")}-${String(i+1).padStart(2,"0")}`;
+    return [now,key,caption,"","", "READY",scheduled,"","",batch,page.fbPageId,"OK"];
+  });
+  const first=values[0]?.[6]||"", last=values[values.length-1]?.[6]||"";
+  if(!confirm(`${page.name}: ${values.length} постыг READY нөөцөд нэмэх үү?\n\nХугацаа: ${first} → ${last}\nНийтлэхийн өмнө Core Publisher цагийг нь хүлээнэ.`)) return;
+  try{
+    document.querySelectorAll("button").forEach(b=>b.disabled=true);
+    const r=await fetch(CONTROL_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+      action:"REFILL_APPROVE",pageKey:key,batchId:JSON.stringify({majorDimension:"ROWS",values}),confirm:"SYSTEM2_V2_REFILL_APPROVE"
+    }),cache:"no-store"});
+    const data=await r.json();
+    if(!r.ok||!data.ok) throw new Error(data.error||`HTTP ${r.status}`);
+    REFILL_STATE[key]={state:"APPROVED",updatedAt:new Date().toISOString()};saveRefillState();
+    addLog("REFILL APPROVE",page,`${values.length} пост READY нөөцөд нэмэгдсэн`);
+    toast(`${page.name} — ${values.length} пост READY нөөцөд нэмэгдлээ.`);
+    closeDetail();
+    await new Promise(res=>setTimeout(res,800));
+    await loadLive();
+  }catch(e){
+    toast("Нөөцөд нэмэх алдаа: "+e.message);
+  }finally{
+    document.querySelectorAll("button").forEach(b=>b.disabled=false);
+  }
+}
+
 function renderRefillManager(){
   const tasks=MODEL
     .filter(p=>!p.special && !p.live && p.state==="ACTIVE" && (p.runwayDays??999)<=14)
@@ -480,6 +586,8 @@ function renderRefillManager(){
             ? `<button class="btn-done" disabled>БЭЛТГЭЖ + QA ШАЛГАЖ БАЙНА…</button>`
             : ws==="ERROR" ? `<button class="btn-work" onclick="startRefill('${esc(p.key)}')">ДАХИН ОРОЛДОХ</button>` : `<button class="btn-work" onclick="startRefill('${esc(p.key)}')">ДАХИН БЭЛТГЭХ</button>`}
         ${ws!=="NOT_STARTED"?`<button class="btn-reset" onclick="clearRefillWorkState('${esc(p.key)}')">ТӨЛӨВ ЦЭВЭРЛЭХ</button>`:""}
+        ${latestRefillRequest(p.key)?`<button onclick="openRefillPreview('${esc(p.key)}')">${isRefillApproved(p.key,latestRefillRequest(p.key))?"БАГЦ ХАРАХ":"10 ПОСТ ХАРАХ"}</button>`:""}
+        ${latestRefillRequest(p.key)&&!isRefillApproved(p.key,latestRefillRequest(p.key))&&p.key==="KINO_UZ"?`<button class="btn-done" onclick="approveRefill('${esc(p.key)}')">БАТЛАХ → НӨӨЦӨД НЭМЭХ</button>`:""}
         <button onclick="openDetail('${esc(p.key)}')">ДЭЛГЭРЭНГҮЙ</button>
       </div>
     </div>`;
@@ -700,9 +808,18 @@ async function loadLive() {
     const res=await fetch(LIVE_ENDPOINT, {method:"GET", cache:"no-store"});
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const data=await res.json();
-    const pages=parseRows(data.pages), publisher=parseRows(data.publisher);
+    const pages=parseRows(data.pages), publisher=parseRows(data.publisher), refill=parseRows(data.refill);
     if(!pages.length) throw new Error("Pages өгөгдөл хоосон");
+    PUBLISHER_ROWS=publisher;
+    REFILL_REQUESTS=refill;
     MODEL=buildModel(pages,publisher);
+    for(const p of MODEL){
+      const req=latestRefillRequest(p.key);
+      if(req){
+        REFILL_STATE[p.key]={state:isRefillApproved(p.key,req)?"APPROVED":"READY_DONE",updatedAt:new Date().toISOString()};
+      }
+    }
+    saveRefillState();
     render();
     pulse.className="pulse ok"; liveText.textContent="ШУУД"; document.getElementById("feedKpi").textContent="ШУУД";
     document.getElementById("updated").textContent=new Date().toLocaleString("mn-MN");
