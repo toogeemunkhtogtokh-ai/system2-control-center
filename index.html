@@ -112,7 +112,7 @@ tr:hover td{background:#11213a}
 .workstate{font-size:11px;font-weight:850;border-radius:999px;padding:5px 9px}
 .workstate.NOT_STARTED{background:rgba(148,163,184,.14);color:#d1d8e4}
 .workstate.IN_PROGRESS{background:rgba(120,168,255,.13);color:#a9c8ff}
-.workstate.READY_DONE{background:rgba(49,208,170,.12);color:#7be6ce}
+.workstate.READY_DONE{background:rgba(49,208,170,.12);color:#7be6ce}.workstate.ERROR{background:rgba(255,107,125,.14);color:#ff9bab}
 .manager-empty{border:1px dashed #314765;border-radius:14px;padding:20px;color:var(--muted);text-align:center}
 @media(max-width:1000px){.refill-manager{grid-template-columns:1fr}.refill-metrics{grid-template-columns:repeat(2,1fr)}}
 
@@ -257,7 +257,7 @@ function clearRefillWorkState(key){
   renderRefillManager();
 }
 function workStateLabel(state){
-  return ({NOT_STARTED:"ЭХЛЭЭГҮЙ",IN_PROGRESS:"БЭЛТГЭЖ + QA ШАЛГАЖ БАЙНА",READY_DONE:"QA БАТАЛГААЖСАН"})[state]||state;
+  return ({NOT_STARTED:"ЭХЛЭЭГҮЙ",IN_PROGRESS:"БЭЛТГЭЖ + QA ШАЛГАЖ БАЙНА",READY_DONE:"QA БАТАЛГААЖСАН",ERROR:"АЛДАА"})[state]||state;
 }
 function estimatePostsPerDay(windowText){
   const matches=String(windowText||"").match(/(?:[01]\d|2[0-3]):[0-5]\d/g)||[];
@@ -478,7 +478,7 @@ function renderRefillManager(){
           ? `<button class="btn-work" onclick="startRefill('${esc(p.key)}')">БЭЛТГЭЖ ЭХЛЭХ</button>`
           : ws==="IN_PROGRESS"
             ? `<button class="btn-done" disabled>БЭЛТГЭЖ + QA ШАЛГАЖ БАЙНА…</button>`
-            : `<button class="btn-work" onclick="startRefill('${esc(p.key)}')">ДАХИН БЭЛТГЭХ</button>`}
+            : ws==="ERROR" ? `<button class="btn-work" onclick="startRefill('${esc(p.key)}')">ДАХИН ОРОЛДОХ</button>` : `<button class="btn-work" onclick="startRefill('${esc(p.key)}')">ДАХИН БЭЛТГЭХ</button>`}
         ${ws!=="NOT_STARTED"?`<button class="btn-reset" onclick="clearRefillWorkState('${esc(p.key)}')">ТӨЛӨВ ЦЭВЭРЛЭХ</button>`:""}
         <button onclick="openDetail('${esc(p.key)}')">ДЭЛГЭРЭНГҮЙ</button>
       </div>
@@ -645,7 +645,7 @@ async function startRefill(key){
     addLog("REFILL",p,`QA БАТАЛГААЖСАН · ${batchSize} пост`);
     toast(`${p.name} — ${batchSize} пост бэлтгэгдэж, QA 85+ шалгалт давлаа.`);
   }catch(e){
-    clearRefillWorkState(key);
+    REFILL_STATE[key]={state:"ERROR",updatedAt:new Date().toISOString(),error:e.message}; saveRefillState(); renderRefillManager();
     addLog("REFILL",p,"АЛДАА: "+e.message);
     toast(`Контент бэлтгэх алдаа: ${e.message}`);
   }finally{
