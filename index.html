@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>System2 Удирдлагын төв — v2.4.3</title>
+<style>
+:root {
+  --bg:#07111f; --panel:#0e1a2d; --panel2:#111f35; --line:#223653; --text:#eef5ff; --muted:#91a5c3;
+  --ok:#31d0aa; --low:#f5b942; --bad:#ff6b7d; --pause:#94a3b8; --accent:#7c93ff; --blue:#78a8ff;
+}
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(180deg,#07101c 0%,#0a1221 45%,#09111e 100%);color:var(--text);font:14px/1.45 Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:1480px;margin:auto;padding:28px}
+header{display:flex;justify-content:space-between;gap:18px;align-items:flex-end;margin-bottom:20px}
+h1{margin:0;font-size:30px;letter-spacing:-.6px}
+.sub{margin-top:5px;color:var(--muted)}
+.top-right{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.badge,button,select,input{border:1px solid var(--line);background:#0c1729;color:var(--text);border-radius:10px;padding:9px 11px}
+button{cursor:pointer;font-weight:750}
+button:hover{border-color:#4d6692}
+button:disabled{opacity:.45;cursor:not-allowed}
+.btn-pause{border-color:rgba(255,107,125,.45);color:#ffb3bd}
+.btn-resume{border-color:rgba(49,208,170,.45);color:#8cebd6}
+.live{display:flex;align-items:center;gap:7px}
+.pulse{width:9px;height:9px;border-radius:50%;background:var(--pause)}
+.pulse.ok{background:var(--ok);box-shadow:0 0 0 5px rgba(49,208,170,.10)}
+.pulse.bad{background:var(--bad)}
+.grid{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:20px}
+.card{background:rgba(14,26,45,.94);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 14px 35px rgba(0,0,0,.14)}
+.kpi .label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.09em}
+.kpi .num{font-size:30px;font-weight:800;margin-top:3px}
+.section{margin-top:20px}
+.section-head{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-bottom:10px}
+.section h2{font-size:17px;margin:0}
+.controls{display:flex;gap:8px;flex-wrap:wrap}
+table{width:100%;border-collapse:separate;border-spacing:0;background:rgba(14,26,45,.94);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+th,td{padding:12px;border-bottom:1px solid #1d304b;text-align:left;vertical-align:middle;white-space:nowrap}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);background:#0d182a;position:sticky;top:0}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#11213a}
+.table-wrap{overflow:auto;border-radius:16px}
+.name{font-weight:800}
+.key{font-size:11px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.pill{display:inline-flex;align-items:center;gap:7px;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:800}
+.dot{width:7px;height:7px;border-radius:50%}
+.OK{background:rgba(49,208,170,.12);color:#7be6ce} .OK .dot{background:var(--ok)}
+.LOW,.WATCH{background:rgba(245,185,66,.12);color:#ffd27a} .LOW .dot,.WATCH .dot{background:var(--low)}
+.CRITICAL{background:rgba(255,107,125,.13);color:#ff9bab} .CRITICAL .dot{background:var(--bad)}
+.PAUSED{background:rgba(148,163,184,.14);color:#d1d8e4} .PAUSED .dot{background:var(--pause)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.alerts{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.alert{background:#0f1c30;border:1px solid var(--line);border-radius:13px;padding:13px}
+.alert strong{display:block;margin-bottom:4px}
+.errbox{display:none;background:rgba(255,107,125,.09);border:1px solid rgba(255,107,125,.45);border-radius:13px;padding:12px;margin-bottom:15px;color:#ffbec7}
+.toast{position:fixed;right:24px;bottom:24px;max-width:420px;background:#13213a;border:1px solid #344e78;border-radius:14px;padding:14px 16px;box-shadow:0 18px 50px rgba(0,0,0,.35);display:none;z-index:20}
+.log{display:grid;gap:8px}
+.logline{display:flex;gap:12px;justify-content:space-between;border-bottom:1px solid #1d304b;padding:8px 0}
+.logline:last-child{border-bottom:none}
+.footer{margin-top:18px;color:var(--muted);font-size:12px}
+@media(max-width:1050px){.grid{grid-template-columns:repeat(2,1fr)} header{flex-direction:column;align-items:flex-start} .top-right{justify-content:flex-start} .alerts{grid-template-columns:1fr}}
+
+.SPECIAL{background:rgba(124,147,255,.14);color:#b9c5ff}.SPECIAL .dot{background:var(--accent)}
+.LIVE{background:rgba(49,208,170,.12);color:#8cebd6}.LIVE .dot{background:var(--ok)}
+.ACTION_REQUIRED{background:rgba(255,107,125,.18);color:#ffd0d6;border:1px solid rgba(255,107,125,.35)}.ACTION_REQUIRED .dot{background:var(--bad)}
+.runway{font-weight:800}.runway.ok{color:#7be6ce}.runway.low{color:#ffd27a}.runway.critical{color:#ffb27a}.runway.action{color:#ff9bab}
+.btn-locked{border-color:#41516d;color:#7f90ad;cursor:not-allowed}
+.linkbtn{all:unset;cursor:pointer;font-weight:800;color:var(--text)}
+.linkbtn:hover{text-decoration:underline}
+.modal{display:none;position:fixed;inset:0;background:rgba(2,8,20,.78);z-index:30;padding:24px;overflow:auto}
+.modal.open{display:block}
+.modal-card{max-width:1180px;margin:24px auto;background:#0d182a;border:1px solid var(--line);border-radius:18px;box-shadow:0 24px 70px rgba(0,0,0,.45);overflow:hidden}
+.modal-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:18px 20px;border-bottom:1px solid var(--line)}
+.modal-head h3{margin:0;font-size:22px}
+.modal-body{padding:20px}
+.detail-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}
+.detail-card{background:#101d32;border:1px solid var(--line);border-radius:12px;padding:12px}
+.detail-card .v{font-size:20px;font-weight:800;margin-top:3px}
+.detail-section{margin-top:18px}
+.detail-section h4{margin:0 0 9px;font-size:15px}
+.mini-table{width:100%;border-collapse:collapse;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.mini-table th,.mini-table td{padding:9px 10px;border-bottom:1px solid #1d304b;white-space:normal}
+.caption-preview{max-width:560px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.info-box{border:1px solid #314765;background:#101d32;border-radius:12px;padding:12px;color:#c6d4ea}
+@media(max-width:900px){.detail-grid{grid-template-columns:repeat(2,1fr)}}
+.refill-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.refill-card{background:#0f1c30;border:1px solid var(--line);border-radius:14px;padding:14px;min-height:108px}
+.refill-card .count{font-size:28px;font-weight:850;margin:2px 0 4px}
+.refill-card .pages{color:var(--muted);font-size:12px;white-space:normal}
+.refill-pill{display:inline-flex;align-items:center;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:850}
+.REFILL_OK{background:rgba(49,208,170,.12);color:#7be6ce}
+.PREPARE_TOPICS{background:rgba(120,168,255,.13);color:#a9c8ff}
+.WAITING_APPROVAL{background:rgba(245,185,66,.12);color:#ffd27a}
+.GENERATE_CONTENT{background:rgba(255,167,83,.13);color:#ffc186}
+.URGENT_REFILL{background:rgba(255,107,125,.18);color:#ffd0d6;border:1px solid rgba(255,107,125,.35)}
+@media(max-width:900px){.refill-grid{grid-template-columns:repeat(2,1fr)}}
+
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div>
+    <h1>System2 Удирдлагын төв</h1>
+    <div class="sub">v2.4.3 · Монгол интерфэйс · Гараар шинэчлэх</div>
+  </div>
+  <div class="top-right">
+    <div class="badge live"><span id="feedPulse" class="pulse"></span><span id="feedText">Мэдээлэл…</span></div>
+    <div class="badge live"><span id="ctrlPulse" class="pulse ok"></span><span id="ctrlText">УДИРДЛАГА БЭЛЭН</span></div>
+    <div class="badge">Сүүлд шинэчилсэн: <span id="updated">—</span></div>
+    <button id="refresh">Шинэчлэх</button>
+  </div>
+</header>
+
+<div id="error" class="errbox"></div>
+
+<div class="grid">
+  <div class="card kpi"><div class="label">Идэвхтэй пэйжүүд</div><div class="num" id="active">—</div></div>
+  <div class="card kpi"><div class="label">Түр зогсоосон</div><div class="num" id="paused">—</div></div>
+  <div class="card kpi"><div class="label">Нийтлэхэд бэлэн пост</div><div class="num" id="ready">—</div></div>
+  <div class="card kpi"><div class="label">Анхаарах шаардлагатай</div><div class="num" id="attention">—</div><div class="muted" id="attentionBreakdown" style="font-size:11px;margin-top:4px">—</div></div>
+  <div class="card kpi"><div class="label">Шууд мэдээлэл</div><div class="num" id="feedKpi" style="font-size:21px;margin-top:9px">—</div></div>
+  <div class="card kpi"><div class="label">Удирдлагын холболт</div><div class="num" id="ctrlKpi" style="font-size:21px;margin-top:9px">ХЭРЭГЦЭЭТ ҮЕД</div></div>
+</div>
+
+<section class="section">
+  <div class="section-head">
+    <h2>Пэйжийн төлөв ба удирдлага</h2>
+    <div class="controls">
+      <input id="search" placeholder="Пэйж хайх…">
+      <select id="filter">
+        <option value="ALL">Бүгд</option>
+        <option value="ACTIVE">Идэвхтэй</option>
+        <option value="PAUSED">Түр зогсоосон</option>
+        <option value="ATTN">Анхаарах шаардлагатай</option>
+        <option value="ACTION">Яаралтай арга хэмжээ</option>
+        <option value="CRITICAL">Ноцтой анхаарах</option>
+        <option value="LOW">Нөөц багассан</option>
+      </select>
+      <select id="refillFilter">
+        <option value="ALL">Контент нөхөх: Бүгд</option>
+        <option value="PREPARE_TOPICS">Сэдэв бэлтгэх</option>
+        <option value="WAITING_APPROVAL">Батлуулах хүлээлттэй</option>
+        <option value="GENERATE_CONTENT">Контент бэлтгэх</option>
+        <option value="URGENT_REFILL">Яаралтай нөхөх</option>
+        <option value="REFILL_OK">Нөөц хэвийн</option>
+      </select>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Пэйж</th><th>Төлөв</th><th>Бэлэн</th><th>Хүрэлцэх хоног</th><th>Контент нөхөх төлөвлөгөө</th><th>Дараагийн пост</th><th>Контент дуусах</th><th>Сүүлд нийтэлсэн</th><th>Одоогийн асуудал</th><th>Удирдлага</th></tr></thead>
+      <tbody id="tbody"><tr><td colspan="10" class="muted">Өгөгдөл ачаалж байна…</td></tr></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-head">
+    <h2>Контент нөхөх төлөвлөгөө</h2>
+    <div class="muted" style="font-size:12px">14 хоног → Сэдэв бэлтгэх · 10 хоног → Батлуулах · 7 хоног → Контент бэлтгэх · 3 хоног → Яаралтай нөхөх</div>
+  </div>
+  <div class="refill-grid" id="refillBoard"></div>
+</section>
+
+<section class="section">
+  <div class="section-head"><h2>Анхааруулгын төв</h2><div class="muted" style="font-size:12px">8–14 хоног: нөөц багасаж байна · 4–7 хоног: ноцтой анхаарах · 0–3 хоног эсвэл алдаа: яаралтай арга хэмжээ</div></div>
+  <div class="alerts" id="alerts"></div>
+</section>
+
+<section class="section">
+  <div class="section-head"><h2>Энэ нээлтийн удирдлагын түүх</h2></div>
+  <div class="card log" id="log"><div class="muted">Удирдлагын үйлдэл хараахан хийгээгүй.</div></div>
+</section>
+
+<div class="footer">
+  ТҮР ЗОГСООХ / ҮРГЭЛЖЛҮҮЛЭХ нь AUTO #3 Make Publisher → Pages sheet-ийн тухайн үндсэн мөрийн Enabled утгыг өөрчилнө.
+  БЭЛЭН нийтлэлүүд устахгүй. ТҮР ЗОГСООХ үед нийтлэх урсгал тухайн пэйжийг алгасана; ҮРГЭЛЖЛҮҮЛЭХ үед нийтлэх дараалал дахин үргэлжилнэ.
+</div>
+</div>
+
+
+<div id="detailModal" class="modal" onclick="if(event.target===this)closeDetail()">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div>
+        <h3 id="detailTitle">Пэйжийн дэлгэрэнгүй</h3>
+        <div id="detailSub" class="muted"></div>
+      </div>
+      <button onclick="closeDetail()">Хаах</button>
+    </div>
+    <div class="modal-body" id="detailBody"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+
+<script>
+const LIVE_ENDPOINT = "/api/feed";
+const CONTROL_ENDPOINT = "/api/control";
+const SPECIAL_PAGES = new Set(["SENSUS_JP"]);
+const LIVE_PAGES = new Set(["ANZAAR_MN"]);
+let MODEL = [];
+let COMMAND_LOG = [];
+
+function parseRows(valueRange) {
+  const values = valueRange?.values || [];
+  if (!values.length) return [];
+  const headers = values[0];
+  return values.slice(1).map((r,idx) => {
+    if(!r.some(v => String(v||"").trim() !== "")) return null;
+    const o = {__ROW_NUMBER__:idx+2};
+    headers.forEach((h,i) => o[h] = r[i] ?? "");
+    return o;
+  }).filter(Boolean);
+}
+function dt(s) {
+  if(!s) return null;
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  if(!m) return null;
+  return new Date(+m[1], +m[2]-1, +m[3], +m[4], +m[5], 0);
+}
+function fmt(d) {
+  if(!d) return "—";
+  const z=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}`;
+}
+function daysLeft(d) {
+  if(!d) return null;
+  return Math.max(0, Math.ceil((d - new Date()) / 86400000));
+}
+function canonicalPages(rows) {
+  const map = new Map();
+  for (const p of rows) {
+    const k=p["Page Key"]; if(!k) continue;
+    const cur=map.get(k);
+    if(!cur) { map.set(k,p); continue; }
+    const pe=String(p["Enabled"]).toUpperCase()==="TRUE";
+    const ce=String(cur["Enabled"]).toUpperCase()==="TRUE";
+    if(pe && !ce) map.set(k,p);
+    else if(pe===ce && String(p["Last Health Check"]) > String(cur["Last Health Check"])) map.set(k,p);
+  }
+  return [...map.values()];
+}
+function rowTime(r) {
+  return dt(r["Scheduled Time"]) || dt(r["Created At"]);
+}
+function buildModel(pages, pub) {
+  const now = new Date();
+  return canonicalPages(pages)
+    .filter(p => p["Page Key"] && p["Page Key"] !== "ZAR_MEDIA_TEST")
+    .map(p => {
+      const key=p["Page Key"];
+      const special=SPECIAL_PAGES.has(key);
+      const live=LIVE_PAGES.has(key);
+      const enabled=String(p["Enabled"]).toUpperCase()==="TRUE";
+      const rows=pub.filter(r=>r["Page Key"]===key);
+      const readyRows=rows.filter(r=>String(r["Status"]).toUpperCase()==="READY" && dt(r["Scheduled Time"]) && dt(r["Scheduled Time"])>=now)
+        .sort((a,b)=>dt(a["Scheduled Time"])-dt(b["Scheduled Time"]));
+      const postedRows=rows.filter(r=>String(r["Status"]).toUpperCase()==="POSTED" && rowTime(r))
+        .sort((a,b)=>(rowTime(b)||0)-(rowTime(a)||0));
+      const last=postedRows.length ? rowTime(postedRows[0]) : null;
+      const allErrorRows=rows.filter(r=>String(r["Error"]||"").trim());
+      const actionableErrors=allErrorRows.filter(r=>{
+        const t=rowTime(r);
+        if(!t) return !last;
+        return !last || t>last;
+      }).sort((a,b)=>(rowTime(b)||0)-(rowTime(a)||0));
+      const historicalErrors=allErrorRows.filter(r=>!actionableErrors.includes(r))
+        .sort((a,b)=>(rowTime(b)||0)-(rowTime(a)||0));
+      const next=readyRows.length ? dt(readyRows[0]["Scheduled Time"]) : null;
+      const stockEnd=readyRows.length ? dt(readyRows[readyRows.length-1]["Scheduled Time"]) : null;
+      const notes=String(p["Notes"]||"");
+      const state = enabled ? "ACTIVE" : "PAUSED";
+      const counts={};
+      rows.forEach(r=>{const s=String(r["Status"]||"BLANK").toUpperCase();counts[s]=(counts[s]||0)+1;});
+      const runwayDays = (special || live || state==="PAUSED") ? null : (stockEnd ? Math.max(0,daysLeft(stockEnd)) : 0);
+      let health="OK";
+      if(special) health="SPECIAL";
+      else if(state==="PAUSED") health="PAUSED";
+      else if(actionableErrors.length) health="ACTION_REQUIRED";
+      else if(live) health="LIVE";
+      else if(!stockEnd || readyRows.length===0 || runwayDays<=3) health="ACTION_REQUIRED";
+      else if(runwayDays<=7) health="CRITICAL";
+      else if(runwayDays<=14) health="LOW";
+      const upcomingRows=rows.filter(r=>dt(r["Scheduled Time"]) && dt(r["Scheduled Time"])>=now)
+        .sort((a,b)=>dt(a["Scheduled Time"])-dt(b["Scheduled Time"])).slice(0,10);
+      const recentRows=[...rows].filter(r=>rowTime(r))
+        .sort((a,b)=>(rowTime(b)||0)-(rowTime(a)||0)).slice(0,10);
+      return {
+        row:Number(p.__ROW_NUMBER__), key, name:p["Page Name"]||key, state, health, special, live,
+        ready:(special||live)?null:readyRows.length,next:(special||live)?null:next,stockEnd:(special||live)?null:stockEnd,last,runwayDays,
+        currentError:special?"":(actionableErrors[0]?.["Error"]||""),
+        currentErrors:actionableErrors, historicalErrors, notes,
+        window:p["Default Publish Window"]||"—", lastHealthCheck:p["Last Health Check"]||"",
+        counts, upcomingRows, recentRows
+      };
+    })
+    .sort((a,b)=> {
+      const ord={ACTION_REQUIRED:0,CRITICAL:1,LOW:2,LIVE:3,OK:4,SPECIAL:5,PAUSED:6};
+      return (ord[a.health]-ord[b.health]) || a.name.localeCompare(b.name);
+    });
+}
+function pill(h) {
+  return `<span class="pill ${h}"><span class="dot"></span>${healthLabel(h)}</span>`;
+}
+function esc(s) {
+  return String(s??"").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function toast(msg) {
+  const t=document.getElementById("toast"); t.textContent=msg; t.style.display="block";
+  setTimeout(()=>t.style.display="none",3500);
+}
+function addLog(action,page,result) {
+  COMMAND_LOG.unshift({time:new Date(),action,page:page.name,result});
+  COMMAND_LOG=COMMAND_LOG.slice(0,8);
+  document.getElementById("log").innerHTML=COMMAND_LOG.map(x=>`
+    <div class="logline"><div><strong>${esc(x.action)} · ${esc(x.page)}</strong><div class="muted">${esc(x.result)}</div></div>
+    <div class="mono muted">${x.time.toLocaleTimeString("mn-MN")}</div></div>`).join("");
+}
+function runwayHtml(p) {
+  if(p.special || p.live || p.state==="PAUSED") return "—";
+  const d=p.runwayDays ?? 0;
+  const cls=d<=3?"action":d<=7?"critical":d<=14?"low":"ok";
+  return `<span class="runway ${cls}">${d} өдөр</span>`;
+}
+
+function healthLabel(h){
+  return ({
+    OK:"ХЭВИЙН",
+    LOW:"НӨӨЦ БАГАСАЖ БАЙНА",
+    CRITICAL:"НОЦТОЙ АНХААРАХ",
+    ACTION_REQUIRED:"ЯАРАЛТАЙ АРГА ХЭМЖЭЭ",
+    PAUSED:"ТҮР ЗОГССОН",
+    SPECIAL:"ТУСГАЙ АЖИЛЛАГААТАЙ",
+    LIVE:"ШУУД МЭДЭЭ"
+  })[h]||h;
+}
+function refillStage(p){
+  if(p.special) return "SPECIAL";
+  if(p.live) return "LIVE";
+  if(p.state==="PAUSED") return "PAUSED";
+  const d=p.runwayDays ?? 0;
+  if(d<=3) return "URGENT_REFILL";
+  if(d<=7) return "GENERATE_CONTENT";
+  if(d<=10) return "WAITING_APPROVAL";
+  if(d<=14) return "PREPARE_TOPICS";
+  return "REFILL_OK";
+}
+function refillLabel(stage){
+  return ({
+    REFILL_OK:"НӨӨЦ ХЭВИЙН",
+    PREPARE_TOPICS:"СЭДЭВ БЭЛТГЭХ",
+    WAITING_APPROVAL:"БАТЛУУЛАХ ХҮЛЭЭЛТТЭЙ",
+    GENERATE_CONTENT:"КОНТЕНТ БЭЛТГЭХ",
+    URGENT_REFILL:"ЯАРАЛТАЙ НӨХӨХ",
+    SPECIAL:"ТУСГАЙ АЖИЛЛАГААТАЙ",
+    LIVE:"НӨӨЦ ШААРДАХГҮЙ",
+    PAUSED:"ТҮР ЗОГССОН"
+  })[stage]||stage;
+}
+function refillAction(stage){
+  return ({
+    REFILL_OK:"Одоогоор контент нөхөх ажил шаардахгүй.",
+    PREPARE_TOPICS:"Шинэ сэдвүүд санал болгож, батлуулах багцыг бэлтгэнэ.",
+    WAITING_APPROVAL:"Сэдвийн баталгааг авна.",
+    GENERATE_CONTENT:"Батлагдсан сэдвээр бичвэр, зураг, нийтлэх дарааллыг бэлтгэнэ.",
+    URGENT_REFILL:"Контентын нөөцийг яаралтай нөхнө.",
+    SPECIAL:"Тусгай ажиллагааны өөрийн дүрмээр хянана.",
+    LIVE:"Шууд мэдээний урсгал тул 30 хоногийн контентын нөөц шаардахгүй.",
+    PAUSED:"Үйлчлүүлэгчийн заавар хүртэл контент нөхөхгүй."
+  })[stage]||"—";
+}
+function refillHtml(p){
+  const s=refillStage(p);
+  if(s==="SPECIAL" || s==="LIVE" || s==="PAUSED") return `<span class="muted">${refillLabel(s)}</span>`;
+  return `<span class="refill-pill ${s}">${refillLabel(s)}</span>`;
+}
+function renderRefillBoard(){
+  const stages=["PREPARE_TOPICS","WAITING_APPROVAL","GENERATE_CONTENT","URGENT_REFILL"];
+  const subtitles={PREPARE_TOPICS:"11–14 хоног",WAITING_APPROVAL:"8–10 хоног",GENERATE_CONTENT:"4–7 хоног",URGENT_REFILL:"0–3 хоног"};
+  document.getElementById("refillBoard").innerHTML=stages.map(s=>{
+    const pages=MODEL.filter(p=>refillStage(p)===s);
+    return `<div class="refill-card">
+      <div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.08em">${refillLabel(s)}</div>
+      <div class="count">${pages.length}</div>
+      <div class="muted" style="font-size:11px;margin-bottom:6px">${subtitles[s]}</div>
+      <div class="pages">${pages.length?pages.map(p=>esc(p.name)).join(" · "):"—"}</div>
+    </div>`;
+  }).join("");
+}
+function render() {
+  const q=document.getElementById("search").value.toLowerCase().trim();
+  const f=document.getElementById("filter").value;
+  const rf=document.getElementById("refillFilter").value;
+  const attn=new Set(["ACTION_REQUIRED","CRITICAL","LOW"]);
+  const rows=MODEL.filter(p=>{
+    if(q && !(p.name.toLowerCase().includes(q)||p.key.toLowerCase().includes(q))) return false;
+    if(f==="ACTIVE" && p.state!=="ACTIVE") return false;
+    if(f==="PAUSED" && p.state!=="PAUSED") return false;
+    if(f==="ATTN" && !attn.has(p.health)) return false;
+    if(f==="ACTION" && p.health!=="ACTION_REQUIRED") return false;
+    if(f==="CRITICAL" && p.health!=="CRITICAL") return false;
+    if(f==="LOW" && p.health!=="LOW") return false;
+    if(rf!=="ALL" && refillStage(p)!==rf) return false;
+    return true;
+  });
+  document.getElementById("tbody").innerHTML = rows.length ? rows.map(p=>`
+    <tr title="${esc(p.notes)}">
+      <td><button class="linkbtn" onclick="openDetail('${esc(p.key)}')">${esc(p.name)}</button><div class="key">${esc(p.key)} · row ${p.row}${p.special?' · ТУСГАЙ АЖИЛЛАГААТАЙ':''}</div></td>
+      <td>${pill(p.health)}</td>
+      <td class="mono">${(p.special||p.live)?'—':p.ready}</td>
+      <td>${runwayHtml(p)}</td>
+      <td>${refillHtml(p)}</td>
+      <td class="mono">${(p.special||p.live)?'—':fmt(p.next)}</td>
+      <td class="mono">${(p.special||p.live)?'—':fmt(p.stockEnd)}</td>
+      <td class="mono">${fmt(p.last)}</td>
+      <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis" title="${esc(p.currentError)}">${p.special?'ТУСГАЙ АЖИЛЛАГААТАЙ':(p.live?'ШУУД МЭДЭЭ':esc(p.currentError||"—"))}</td>
+      <td>${p.special
+        ? `<button class="btn-locked" disabled>ТҮГЖЭЭТЭЙ</button>`
+        : (p.state==="ACTIVE"
+          ? `<button class="btn-pause" onclick="controlPage('PAUSE','${esc(p.key)}',${p.row})">ТҮР ЗОГСООХ</button>`
+          : `<button class="btn-resume" onclick="controlPage('RESUME','${esc(p.key)}',${p.row})">ҮРГЭЛЖЛҮҮЛЭХ</button>`)}</td>
+    </tr>`).join("") : `<tr><td colspan="10" class="muted">Тохирох пэйж алга.</td></tr>`;
+
+  document.getElementById("active").textContent=MODEL.filter(p=>p.state==="ACTIVE").length;
+  document.getElementById("paused").textContent=MODEL.filter(p=>p.state==="PAUSED").length;
+  document.getElementById("ready").textContent=MODEL.filter(p=>!p.special && !p.live).reduce((s,p)=>s+(p.ready||0),0);
+  const actionN=MODEL.filter(p=>p.health==="ACTION_REQUIRED").length;
+  const criticalN=MODEL.filter(p=>p.health==="CRITICAL").length;
+  const lowN=MODEL.filter(p=>p.health==="LOW").length;
+  document.getElementById("attention").textContent=actionN+criticalN+lowN;
+  document.getElementById("attentionBreakdown").textContent=`Яаралтай ${actionN} · Ноцтой ${criticalN} · Нөөц багассан ${lowN}`;
+
+  renderRefillBoard();
+
+  const alerts=[];
+  MODEL.filter(p=>p.health==="ACTION_REQUIRED").forEach(p=>alerts.push([`${p.name} — ЯАРАЛТАЙ АРГА ХЭМЖЭЭ`, p.currentError || (p.ready ? `Нөөц ${p.runwayDays} өдөр · READY: ${p.ready} · дуусах ${fmt(p.stockEnd)}` : "Ирээдүйд нийтлэх БЭЛЭН пост алга. Контентын урсгал тасрах эрсдэлтэй.")]));
+  MODEL.filter(p=>p.health==="CRITICAL").forEach(p=>alerts.push([`${p.name} — НОЦТОЙ АНХААРАХ`, `Нөөц ${p.runwayDays} өдөр · READY: ${p.ready} · дуусах ${fmt(p.stockEnd)}`]));
+  MODEL.filter(p=>p.health==="LOW").forEach(p=>alerts.push([`${p.name} — НӨӨЦ БАГАСАЖ БАЙНА`, `Нөөц ${p.runwayDays} өдөр · READY: ${p.ready} · дуусах ${fmt(p.stockEnd)}`]));
+  MODEL.filter(p=>p.state==="PAUSED").forEach(p=>alerts.push([`${p.name} — ТҮР ЗОГССОН`, "Мэдээллийн төлөв: алдаа биш, зориудаар түр зогсоосон."]));
+  document.getElementById("alerts").innerHTML=alerts.slice(0,10).map(a=>`<div class="alert"><strong>${esc(a[0])}</strong><span class="muted">${esc(a[1])}</span></div>`).join("") || `<div class="alert"><strong>OK</strong><span class="muted">Анхаарах зүйл илрээгүй.</span></div>`;
+}
+function statusCountCards(p) {
+  const order=["READY","POSTED","DRAFT","HOLD","MANUAL_REVIEW","ERROR","DUPLICATE_GUARD"];
+  const labels={READY:"Бэлэн (READY)",POSTED:"Нийтлэгдсэн (POSTED)",DRAFT:"Ноорог (DRAFT)",HOLD:"Хүлээлгэсэн (HOLD)",MANUAL_REVIEW:"Гараар шалгах (MANUAL_REVIEW)",ERROR:"Алдаа (ERROR)",DUPLICATE_GUARD:"Давхардлын хамгаалалт (DUPLICATE_GUARD)"};
+  return order.filter(s=>p.counts[s]).map(s=>`<div class="detail-card"><div class="label">${esc(labels[s]||s)}</div><div class="v">${p.counts[s]}</div></div>`).join("");
+}
+function rowHtml(r) {
+  const cap=String(r["Post Caption"]||"").replace(/\s+/g," ").trim();
+  return `<tr>
+    <td class="mono">${esc(r["Scheduled Time"]||r["Created At"]||"—")}</td>
+    <td>${esc(r["Status"]||"—")}</td>
+    <td class="mono">${esc(r["Batch ID"]||"—")}</td>
+    <td class="caption-preview" title="${esc(cap)}">${esc(cap||"—")}</td>
+  </tr>`;
+}
+function openDetail(key) {
+  const p=MODEL.find(x=>x.key===key); if(!p) return;
+  document.getElementById("detailTitle").textContent=p.name;
+  document.getElementById("detailSub").textContent=`${p.key} · ${p.special?'ТУСГАЙ АЖИЛЛАГААТАЙ':(p.live?'ШУУД МЭДЭЭНИЙ АЖИЛЛАГАА':'ЕРДИЙН АЖИЛЛАГАА')} · ${p.state}`;
+  const stage=refillStage(p);
+  const workflowNote=p.special
+    ? `<div class="info-box"><strong>SensusJP тусгай ажиллагаатай</strong><br>Ердийн БЭЛЭН/нөөцийн тооцоо болон ТҮР ЗОГСООХ/ҮРГЭЛЖЛҮҮЛЭХ удирдлага зориудаар идэвхгүй. Dashboard нь зөвхөн нийтлэлийн түүх, ажиллагааны харагдац өгнө.</div>`
+    : (p.live
+      ? `<div class="info-box"><strong>Anzaar.mn — шууд мэдээний ажиллагаа</strong><br>30 хоногийн контентын нөөц урьдчилан бэлтгэдэггүй. Dashboard нь БЭЛЭН постын тоо, хүрэлцэх хоног, контент дуусах хугацаагаар анхааруулга өгөхгүй; нийтлэлийн түүх болон одоогийн алдааг хянана.</div>`
+      : `<div class="info-box"><strong>Контент хүрэлцэх хугацаа</strong><br>8–14 хоног: нөөц багасаж байна · 4–7 хоног: ноцтой анхаарах · 0–3 хоног эсвэл алдаа: яаралтай арга хэмжээ.</div>
+         <div class="info-box" style="margin-top:10px"><strong>Контент нөхөх төлөвлөгөө — ${esc(refillLabel(stage))}</strong><br>${esc(refillAction(stage))}</div>`);
+  const inv=(p.special||p.live)?'—':(p.state==='PAUSED'?'—':`${p.runwayDays ?? 0} өдөр`);
+  const errorText=p.currentErrors.length
+    ? `${p.currentErrors.length} одоогийн алдаа/анхаарах мөр байна.`
+    : (p.historicalErrors.length ? `${p.historicalErrors.length} түүхэн алдаа байгаа боловч хамгийн сүүлийн амжилттай нийтлэлээс өмнөх тул current alert-д тооцоогүй.` : "Одоогийн алдаа илрээгүй.");
+  document.getElementById("detailBody").innerHTML=`
+    ${workflowNote}
+    <div class="detail-grid" style="margin-top:14px">
+      <div class="detail-card"><div class="label">Ерөнхий төлөв</div><div class="v">${esc(healthLabel(p.health))}</div></div>
+      <div class="detail-card"><div class="label">Контентын нөөц</div><div class="v">${esc(inv)}</div></div>
+      <div class="detail-card"><div class="label">Дараагийн пост</div><div class="v" style="font-size:14px">${(p.special||p.live)?'—':fmt(p.next)}</div></div>
+      <div class="detail-card"><div class="label">Сүүлд нийтэлсэн</div><div class="v" style="font-size:14px">${fmt(p.last)}</div></div>
+      <div class="detail-card"><div class="label">Нийтлэх цагийн цонх</div><div class="v" style="font-size:14px">${esc(p.window)}</div></div>
+      <div class="detail-card"><div class="label">Контент нөхөх төлөв</div><div class="v" style="font-size:13px">${esc(refillLabel(stage))}</div></div>
+    </div>
+    <div class="detail-grid">${statusCountCards(p)}</div>
+    <div class="detail-section">
+      <h4>Одоогийн асуудал</h4>
+      <div class="info-box">${esc(errorText)}</div>
+    </div>
+    <div class="detail-section">
+      <h4>Удахгүй нийтлэгдэх постууд — эхний 10</h4>
+      <div class="table-wrap"><table class="mini-table"><thead><tr><th>Огноо, цаг</th><th>Төлөв</th><th>Багцын код</th><th>Бичвэр</th></tr></thead><tbody>
+        ${p.upcomingRows.length?p.upcomingRows.map(rowHtml).join(""):`<tr><td colspan="4" class="muted">Ирээдүйн scheduled мөр алга.</td></tr>`}
+      </tbody></table></div>
+    </div>
+    <div class="detail-section">
+      <h4>Сүүлийн үйл ажиллагаа — сүүлийн 10</h4>
+      <div class="table-wrap"><table class="mini-table"><thead><tr><th>Time</th><th>Status</th><th>Batch</th><th>Caption</th></tr></thead><tbody>
+        ${p.recentRows.length?p.recentRows.map(rowHtml).join(""):`<tr><td colspan="4" class="muted">Түүх алга.</td></tr>`}
+      </tbody></table></div>
+    </div>
+  `;
+  document.getElementById("detailModal").classList.add("open");
+}
+function closeDetail(){document.getElementById("detailModal").classList.remove("open")}
+async function pingControl() {
+  const p=document.getElementById("ctrlPulse"), t=document.getElementById("ctrlText"), k=document.getElementById("ctrlKpi");
+  try {
+    const r=await fetch(CONTROL_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"PING",pageKey:"HEALTHCHECK",batchId:"0",confirm:"PING"}),cache:"no-store"});
+    const data=await r.json();
+    if(!r.ok || !data.ok) throw new Error("Control API response invalid");
+    p.className="pulse ok"; t.textContent="CONTROL ONLINE"; k.textContent="ONLINE";
+  } catch(e) {
+    p.className="pulse bad"; t.textContent="CONTROL ERROR"; k.textContent="ERROR";
+  }
+}
+async function controlPage(action,key,row) {
+  const page=MODEL.find(p=>p.key===key && p.row===row); if(!page) return;
+  if(page.special){toast("Энэ пэйж SPECIAL WORKFLOW тул control түгжээтэй.");return;}
+  const verb=action==="PAUSE" ? "түр зогсоох" : "дахин идэвхжүүлэх";
+  const extra=action==="PAUSE"
+    ? "\n\nREADY queue устахгүй. Core Publisher энэ пэйжийг алгасана."
+    : "\n\nӨнгөрсөн Scheduled Time-тай READY мөр байвал дараагийн publisher run дээр нийтлэгдэх боломжтой.";
+  if(!confirm(`${page.name} пэйжийг ${verb} уу?${extra}`)) return;
+
+  const confirmToken=action==="PAUSE" ? "SYSTEM2_V2_PAUSE" : "SYSTEM2_V2_RESUME";
+  try {
+    document.querySelectorAll("button").forEach(b=>b.disabled=true);
+    const r=await fetch(CONTROL_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,pageKey:key,batchId:String(row),confirm:confirmToken}),cache:"no-store"});
+    const data=await r.json();
+    if(!r.ok || !data.ok) throw new Error(data.error||`HTTP ${r.status}`);
+    document.getElementById("ctrlPulse").className="pulse ok"; document.getElementById("ctrlText").textContent="УДИРДЛАГА ХЭВИЙН"; document.getElementById("ctrlKpi").textContent="ХЭВИЙН";
+    addLog(action,page,"АМЖИЛТТАЙ");
+    toast(`${page.name} — үйлдэл амжилттай.`);
+    await new Promise(res=>setTimeout(res,700));
+    await loadLive();
+  } catch(e) {
+    document.getElementById("ctrlPulse").className="pulse bad"; document.getElementById("ctrlText").textContent="УДИРДЛАГЫН АЛДАА"; document.getElementById("ctrlKpi").textContent="АЛДАА";
+    addLog(action,page,"АЛДАА: "+e.message);
+    toast(`Удирдлагын алдаа: ${e.message}`);
+  } finally {
+    document.querySelectorAll("button").forEach(b=>b.disabled=false);
+  }
+}
+async function loadLive() {
+  const pulse=document.getElementById("feedPulse"), liveText=document.getElementById("feedText"), err=document.getElementById("error");
+  try {
+    pulse.className="pulse"; liveText.textContent="Шинэчилж байна…"; err.style.display="none";
+    const res=await fetch(LIVE_ENDPOINT, {method:"GET", cache:"no-store"});
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data=await res.json();
+    const pages=parseRows(data.pages), publisher=parseRows(data.publisher);
+    if(!pages.length) throw new Error("Pages өгөгдөл хоосон");
+    MODEL=buildModel(pages,publisher);
+    render();
+    pulse.className="pulse ok"; liveText.textContent="ШУУД"; document.getElementById("feedKpi").textContent="ШУУД";
+    document.getElementById("updated").textContent=new Date().toLocaleString("mn-MN");
+  } catch(e) {
+    pulse.className="pulse bad"; liveText.textContent="МЭДЭЭЛЛИЙН АЛДАА"; document.getElementById("feedKpi").textContent="АЛДАА";
+    err.style.display="block"; err.textContent="Шууд мэдээлэл уншиж чадсангүй: "+e.message;
+  }
+}
+document.getElementById("refresh").addEventListener("click",()=>loadLive());
+document.getElementById("search").addEventListener("input",render);
+document.getElementById("filter").addEventListener("change",render);
+document.getElementById("refillFilter").addEventListener("change",render);
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeDetail()});
+loadLive();
+</script>
+
+</body>
+</html>
