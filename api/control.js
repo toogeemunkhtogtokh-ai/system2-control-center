@@ -6,10 +6,11 @@ module.exports = async function handler(req,res){
   const pageKey=String(body.pageKey||"");
   const batchId=String(body.batchId||"");
   const confirm=String(body.confirm||"");
-  if(!["PING","PAUSE","RESUME"].includes(action)) return res.status(400).json({ok:false,error:"INVALID_COMMAND"});
+  if(!["PING","PAUSE","RESUME","REFILL"].includes(action)) return res.status(400).json({ok:false,error:"INVALID_COMMAND"});
   if(pageKey==="SENSUS_JP" && action!=="PING") return res.status(403).json({ok:false,error:"SPECIAL_WORKFLOW_LOCKED"});
   if(action==="PAUSE" && confirm!=="SYSTEM2_V2_PAUSE") return res.status(400).json({ok:false,error:"BAD_CONFIRMATION"});
   if(action==="RESUME" && confirm!=="SYSTEM2_V2_RESUME") return res.status(400).json({ok:false,error:"BAD_CONFIRMATION"});
+  if(action==="REFILL" && confirm!=="SYSTEM2_V2_REFILL") return res.status(400).json({ok:false,error:"BAD_CONFIRMATION"});
   try{
     const upstream=process.env.SYSTEM2_CONTROL_URL;
     if(!upstream) return res.status(500).json({ok:false,error:"CONTROL_NOT_CONFIGURED"});
