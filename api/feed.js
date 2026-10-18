@@ -4,7 +4,7 @@ module.exports = async function handler(req, res) {
     return;
   }
   try {
-    const upstream = await fetch("https://system2-control-center.vercel.app/api/feed", {
+    const upstream = await fetch("https://system2-control-center-toogee-s-projects.vercel.app/api/feed", {
       method: "GET",
       headers: { "accept": "application/json" },
       cache: "no-store"
