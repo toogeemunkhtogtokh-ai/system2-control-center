@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>System2 Удирдлагын төв — v2.4.3</title>
+<title>System2 Удирдлагын төв — v2.5.0</title>
 <style>
 :root {
   --bg:#07111f; --panel:#0e1a2d; --panel2:#111f35; --line:#223653; --text:#eef5ff; --muted:#91a5c3;
@@ -96,6 +96,25 @@ tr:hover td{background:#11213a}
 .GENERATE_CONTENT{background:rgba(255,167,83,.13);color:#ffc186}
 .URGENT_REFILL{background:rgba(255,107,125,.18);color:#ffd0d6;border:1px solid rgba(255,107,125,.35)}
 @media(max-width:900px){.refill-grid{grid-template-columns:repeat(2,1fr)}}
+.refill-manager{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.refill-task{background:#0f1c30;border:1px solid var(--line);border-radius:16px;padding:15px;display:grid;gap:11px}
+.refill-task.urgent{border-color:rgba(255,107,125,.45)}
+.refill-task-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+.refill-task-title{font-size:16px;font-weight:850}
+.refill-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.refill-metric{background:#101d32;border:1px solid #1d304b;border-radius:11px;padding:9px}
+.refill-metric .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
+.refill-metric .v{font-size:17px;font-weight:850;margin-top:2px}
+.refill-task-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn-work{border-color:rgba(120,168,255,.45);color:#bcd4ff}
+.btn-done{border-color:rgba(49,208,170,.45);color:#8cebd6}
+.btn-reset{border-color:#41516d;color:#a9b6ca}
+.workstate{font-size:11px;font-weight:850;border-radius:999px;padding:5px 9px}
+.workstate.NOT_STARTED{background:rgba(148,163,184,.14);color:#d1d8e4}
+.workstate.IN_PROGRESS{background:rgba(120,168,255,.13);color:#a9c8ff}
+.workstate.READY_DONE{background:rgba(49,208,170,.12);color:#7be6ce}
+.manager-empty{border:1px dashed #314765;border-radius:14px;padding:20px;color:var(--muted);text-align:center}
+@media(max-width:1000px){.refill-manager{grid-template-columns:1fr}.refill-metrics{grid-template-columns:repeat(2,1fr)}}
 
 </style>
 </head>
@@ -104,7 +123,7 @@ tr:hover td{background:#11213a}
 <header>
   <div>
     <h1>System2 Удирдлагын төв</h1>
-    <div class="sub">v2.4.3 · Монгол интерфэйс · Гараар шинэчлэх</div>
+    <div class="sub">v2.5.0 · Монгол интерфэйс · Контент нөхөх удирдлага</div>
   </div>
   <div class="top-right">
     <div class="badge live"><span id="feedPulse" class="pulse"></span><span id="feedText">Мэдээлэл…</span></div>
@@ -159,6 +178,17 @@ tr:hover td{background:#11213a}
 
 <section class="section">
   <div class="section-head">
+    <div>
+      <h2>Контент нөхөх удирдлага</h2>
+      <div class="muted" style="font-size:12px;margin-top:4px">14 хоногоос доош нөөцтэй System2 пэйжүүд · зорилтот нөөц 30 хоног</div>
+    </div>
+    <div class="badge">Ажил: <strong id="refillTaskCount">0</strong></div>
+  </div>
+  <div class="refill-manager" id="refillManager"></div>
+</section>
+
+<section class="section">
+  <div class="section-head">
     <h2>Контент нөхөх төлөвлөгөө</h2>
     <div class="muted" style="font-size:12px">14 хоног → Сэдэв бэлтгэх · 10 хоног → Батлуулах · 7 хоног → Контент бэлтгэх · 3 хоног → Яаралтай нөхөх</div>
   </div>
@@ -205,6 +235,35 @@ const SPECIAL_PAGES = new Set(["SENSUS_JP"]);
 const LIVE_PAGES = new Set(["ANZAAR_MN"]);
 let MODEL = [];
 let COMMAND_LOG = [];
+const REFILL_TARGET_DAYS = 30;
+const REFILL_STATE_KEY = "system2_refill_tasks_v1";
+let REFILL_STATE = loadRefillState();
+
+function loadRefillState(){
+  try{return JSON.parse(localStorage.getItem(REFILL_STATE_KEY)||"{}")||{};}catch(e){return {};}
+}
+function saveRefillState(){
+  try{localStorage.setItem(REFILL_STATE_KEY,JSON.stringify(REFILL_STATE));}catch(e){}
+}
+function refillWorkState(key){return REFILL_STATE[key]?.state||"NOT_STARTED";}
+function setRefillWorkState(key,state){
+  REFILL_STATE[key]={state,updatedAt:new Date().toISOString()};
+  saveRefillState();
+  renderRefillManager();
+}
+function clearRefillWorkState(key){
+  delete REFILL_STATE[key];
+  saveRefillState();
+  renderRefillManager();
+}
+function workStateLabel(state){
+  return ({NOT_STARTED:"ЭХЛЭЭГҮЙ",IN_PROGRESS:"БЭЛТГЭЖ БАЙНА",READY_DONE:"БЭЛЭН БОЛСОН"})[state]||state;
+}
+function estimatePostsPerDay(windowText){
+  const matches=String(windowText||"").match(/(?:[01]\d|2[0-3]):[0-5]\d/g)||[];
+  const unique=[...new Set(matches)];
+  return unique.length||null;
+}
 
 function parseRows(valueRange) {
   const values = valueRange?.values || [];
@@ -290,12 +349,17 @@ function buildModel(pages, pub) {
         .sort((a,b)=>dt(a["Scheduled Time"])-dt(b["Scheduled Time"])).slice(0,10);
       const recentRows=[...rows].filter(r=>rowTime(r))
         .sort((a,b)=>(rowTime(b)||0)-(rowTime(a)||0)).slice(0,10);
+      const windowText=p["Default Publish Window"]||"—";
+      const postsPerDay=(special||live)?null:estimatePostsPerDay(windowText);
+      const refillNeedDays=(special||live||state==="PAUSED")?0:Math.max(0,REFILL_TARGET_DAYS-(runwayDays||0));
+      const refillNeedPosts=postsPerDay?Math.max(0,Math.ceil(refillNeedDays*postsPerDay)):null;
       return {
         row:Number(p.__ROW_NUMBER__), key, name:p["Page Name"]||key, state, health, special, live,
         ready:(special||live)?null:readyRows.length,next:(special||live)?null:next,stockEnd:(special||live)?null:stockEnd,last,runwayDays,
         currentError:special?"":(actionableErrors[0]?.["Error"]||""),
         currentErrors:actionableErrors, historicalErrors, notes,
-        window:p["Default Publish Window"]||"—", lastHealthCheck:p["Last Health Check"]||"",
+        window:windowText, lastHealthCheck:p["Last Health Check"]||"",
+        postsPerDay, refillNeedDays, refillNeedPosts,
         counts, upcomingRows, recentRows
       };
     })
@@ -379,6 +443,49 @@ function refillHtml(p){
   if(s==="SPECIAL" || s==="LIVE" || s==="PAUSED") return `<span class="muted">${refillLabel(s)}</span>`;
   return `<span class="refill-pill ${s}">${refillLabel(s)}</span>`;
 }
+function renderRefillManager(){
+  const tasks=MODEL
+    .filter(p=>!p.special && !p.live && p.state==="ACTIVE" && (p.runwayDays??999)<=14)
+    .sort((a,b)=>(a.runwayDays??999)-(b.runwayDays??999));
+  document.getElementById("refillTaskCount").textContent=tasks.length;
+  const el=document.getElementById("refillManager");
+  if(!tasks.length){
+    el.innerHTML='<div class="manager-empty">Одоогоор контент нөхөх шаардлагатай пэйж алга.</div>';
+    return;
+  }
+  el.innerHTML=tasks.map(p=>{
+    const stage=refillStage(p);
+    const ws=refillWorkState(p.key);
+    const posts=p.refillNeedPosts==null?"—":p.refillNeedPosts;
+    const urgency=(p.runwayDays??0)<=3?" urgent":"";
+    return `<div class="refill-task${urgency}">
+      <div class="refill-task-head">
+        <div>
+          <div class="refill-task-title">${esc(p.name)}</div>
+          <div class="key">${esc(p.key)} · ${esc(refillLabel(stage))}</div>
+        </div>
+        <span class="workstate ${ws}">${workStateLabel(ws)}</span>
+      </div>
+      <div class="refill-metrics">
+        <div class="refill-metric"><div class="k">Одоогийн нөөц</div><div class="v">${p.runwayDays??0} өдөр</div></div>
+        <div class="refill-metric"><div class="k">30 хоногт дутуу</div><div class="v">${p.refillNeedDays} өдөр</div></div>
+        <div class="refill-metric"><div class="k">Өдөрт пост</div><div class="v">${p.postsPerDay??"—"}</div></div>
+        <div class="refill-metric"><div class="k">Тооцоолсон пост</div><div class="v">${posts}</div></div>
+      </div>
+      <div class="muted">${esc(refillAction(stage))}</div>
+      <div class="refill-task-actions">
+        ${ws==="NOT_STARTED"
+          ? `<button class="btn-work" onclick="setRefillWorkState('${esc(p.key)}','IN_PROGRESS')">БЭЛТГЭЖ ЭХЛЭХ</button>`
+          : ws==="IN_PROGRESS"
+            ? `<button class="btn-done" onclick="setRefillWorkState('${esc(p.key)}','READY_DONE')">БЭЛЭН БОЛСОН</button>`
+            : `<button class="btn-work" onclick="setRefillWorkState('${esc(p.key)}','IN_PROGRESS')">ДАХИН БЭЛТГЭХ</button>`}
+        ${ws!=="NOT_STARTED"?`<button class="btn-reset" onclick="clearRefillWorkState('${esc(p.key)}')">ТӨЛӨВ ЦЭВЭРЛЭХ</button>`:""}
+        <button onclick="openDetail('${esc(p.key)}')">ДЭЛГЭРЭНГҮЙ</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
 function renderRefillBoard(){
   const stages=["PREPARE_TOPICS","WAITING_APPROVAL","GENERATE_CONTENT","URGENT_REFILL"];
   const subtitles={PREPARE_TOPICS:"11–14 хоног",WAITING_APPROVAL:"8–10 хоног",GENERATE_CONTENT:"4–7 хоног",URGENT_REFILL:"0–3 хоног"};
@@ -435,6 +542,7 @@ function render() {
   document.getElementById("attention").textContent=actionN+criticalN+lowN;
   document.getElementById("attentionBreakdown").textContent=`Яаралтай ${actionN} · Ноцтой ${criticalN} · Нөөц багассан ${lowN}`;
 
+  renderRefillManager();
   renderRefillBoard();
 
   const alerts=[];
