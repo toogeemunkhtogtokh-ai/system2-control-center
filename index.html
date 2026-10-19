@@ -450,14 +450,15 @@ function refillHtml(p){
 function refillQueueStats(key){
   const rows=REFILL_QUEUE.filter(r=>r["Page Key"]===key);
   const queued=rows.filter(r=>String(r["Status"]||"").toUpperCase()==="QUEUED").length;
+  const processing=rows.filter(r=>String(r["Status"]||"").toUpperCase()==="PROCESSING").length;
   const done=rows.filter(r=>String(r["Status"]||"").toUpperCase()==="DONE").length;
   const error=rows.filter(r=>String(r["Status"]||"").toUpperCase()==="ERROR").length;
   const total=rows.length;
-  return {queued,done,error,total};
+  return {queued,processing,done,error,total};
 }
 function hasActiveAutoQueue(key){
   const q=refillQueueStats(key);
-  return q.queued>0;
+  return (q.queued+q.processing)>0;
 }
 function latestRefillRequest(key){
   const list=REFILL_REQUESTS.filter(r=>r["Page Key"]===key && String(r["Request Status"]||"").toUpperCase()==="QA_PASSED");
@@ -603,7 +604,9 @@ function renderRefillManager(){
         <div class="refill-metric"><div class="k">Нөхөх пост/өдөр</div><div class="v">${p.postsPerDay??"—"}</div></div>
         <div class="refill-metric"><div class="k">Тооцоолсон пост</div><div class="v">${posts}</div></div>
       </div>
-      <div class="muted">${p.key==="KINO_UZ"?"06:00 ба 17:00 авто-нөхөлт · 20:00 зурагтай System2 нөөц тусдаа.":esc(refillAction(stage))}</div>
+      <div class="muted">${p.key==="KINO_UZ"
+        ? (()=>{const q=refillQueueStats(p.key);return `06:00 ба 17:00 авто-нөхөлт · 20:00 зурагтай System2 нөөц тусдаа.${q.total?` · Auto batch ${q.done}/${q.total}${q.processing?" · 1 боловсруулж байна":""}`:""}`;})()
+        : esc(refillAction(stage))}</div>
       <div class="refill-task-actions">
         ${ws==="NOT_STARTED"
           ? `<button class="btn-work" onclick="startRefill('${esc(p.key)}')">БЭЛТГЭЖ ЭХЛЭХ</button>`
