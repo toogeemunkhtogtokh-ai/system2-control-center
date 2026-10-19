@@ -16,11 +16,19 @@ module.exports = async function handler(req,res){
   if(action==="REFILL_AUTO"){
     let p;
     try{p=JSON.parse(batchId);}catch(e){return res.status(400).json({ok:false,error:"INVALID_AUTO_REFILL_PAYLOAD"});}
-    const rows=Array.isArray(p?.values)?p.values:null;
-    if(p?.majorDimension!=="ROWS" || !rows?.length || rows.length>10) return res.status(400).json({ok:false,error:"INVALID_AUTO_REFILL_BATCHES"});
-    if(rows.some(r=>!Array.isArray(r) || r.length!==14 || String(r[2]||"")!==pageKey || String(r[8]||"")!=="QUEUED")){
-      return res.status(400).json({ok:false,error:"INVALID_AUTO_REFILL_ROWS"});
-    }
+    const batches=Array.isArray(p?.batches)?p.batches:null;
+    if(!batches?.length || batches.length>10) return res.status(400).json({ok:false,error:"INVALID_AUTO_REFILL_BATCHES"});
+    const bad=batches.some(b=>
+      !b || typeof b!=="object" ||
+      String(b.pageKey||"")!==pageKey ||
+      !String(b.jobId||"") ||
+      !String(b.pageName||"") ||
+      !Number.isInteger(Number(b.batchSize)) ||
+      Number(b.batchSize)<1 || Number(b.batchSize)>10 ||
+      !String(b.publishWindow||"") ||
+      !String(b.contentRules||"")
+    );
+    if(bad) return res.status(400).json({ok:false,error:"INVALID_AUTO_REFILL_BATCH"});
   }
   if(action==="REFILL_APPROVE"){
     let p;
