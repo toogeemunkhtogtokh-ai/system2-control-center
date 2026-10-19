@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>System2 Удирдлагын төв — v2.8.1</title>
+<title>System2 Удирдлагын төв — v2.8.2</title>
 <style>
 :root {
   --bg:#07111f; --panel:#0e1a2d; --panel2:#111f35; --line:#223653; --text:#eef5ff; --muted:#91a5c3;
@@ -123,7 +123,7 @@ tr:hover td{background:#11213a}
 <header>
   <div>
     <h1>System2 Удирдлагын төв</h1>
-    <div class="sub">v2.8.1 · Контент нөхөх · QA 85 · Батлах → READY</div>
+    <div class="sub">v2.8.2 · Контент нөхөх · QA 85 · Батлах → READY · Payload хамгаалалт</div>
   </div>
   <div class="top-right">
     <div class="badge live"><span id="feedPulse" class="pulse"></span><span id="feedText">Мэдээлэл…</span></div>
@@ -553,7 +553,9 @@ async function approveRefill(key){
     await new Promise(res=>setTimeout(res,800));
     await loadLive();
   }catch(e){
-    toast("Нөөцөд нэмэх алдаа: "+e.message);
+    toast(e.message==="REFILL_APPROVE_PAYLOAD_VERSION_MISMATCH"
+      ?"Dashboard-ийн хуучин хувилбар байна. Нэг refresh хийгээд дахин оролдоно уу."
+      :"Нөөцөд нэмэх алдаа: "+e.message);
   }finally{
     document.querySelectorAll("button").forEach(b=>b.disabled=false);
   }
