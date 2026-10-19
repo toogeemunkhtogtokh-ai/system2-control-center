@@ -15,9 +15,12 @@ module.exports = async function handler(req,res){
   try{
     const upstream=process.env.SYSTEM2_CONTROL_URL;
     if(!upstream) return res.status(500).json({ok:false,error:"CONTROL_NOT_CONFIGURED"});
-    const u=new URL(upstream);
-    u.search=new URLSearchParams({action,pageKey,batchId,confirm}).toString();
-    const r=await fetch(u,{method:"GET",cache:"no-store"});
+    const r=await fetch(upstream,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({action,pageKey,batchId,confirm}),
+      cache:"no-store"
+    });
     const txt=await r.text();
     res.status(r.status);
     res.setHeader("Content-Type",r.headers.get("content-type")||"application/json; charset=utf-8");
