@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>System2 Удирдлагын төв — v2.8.2</title>
+<title>System2 Удирдлагын төв — v2.9.0</title>
 <style>
 :root {
   --bg:#07111f; --panel:#0e1a2d; --panel2:#111f35; --line:#223653; --text:#eef5ff; --muted:#91a5c3;
@@ -123,7 +123,7 @@ tr:hover td{background:#11213a}
 <header>
   <div>
     <h1>System2 Удирдлагын төв</h1>
-    <div class="sub">v2.8.2 · Контент нөхөх · QA 85 · Батлах → READY · Payload хамгаалалт</div>
+    <div class="sub">v2.9.0 · Контент нөхөх · QA 85 · Авто batch queue</div>
   </div>
   <div class="top-right">
     <div class="badge live"><span id="feedPulse" class="pulse"></span><span id="feedText">Мэдээлэл…</span></div>
@@ -236,6 +236,7 @@ const LIVE_PAGES = new Set(["ANZAAR_MN"]);
 let MODEL = [];
 let COMMAND_LOG = [];
 let REFILL_REQUESTS = [];
+let REFILL_QUEUE = [];
 let PUBLISHER_ROWS = [];
 const REFILL_TARGET_DAYS = 30;
 const REFILL_STATE_KEY = "system2_refill_tasks_v1";
@@ -446,6 +447,18 @@ function refillHtml(p){
   if(s==="SPECIAL" || s==="LIVE" || s==="PAUSED") return `<span class="muted">${refillLabel(s)}</span>`;
   return `<span class="refill-pill ${s}">${refillLabel(s)}</span>`;
 }
+function refillQueueStats(key){
+  const rows=REFILL_QUEUE.filter(r=>r["Page Key"]===key);
+  const queued=rows.filter(r=>String(r["Status"]||"").toUpperCase()==="QUEUED").length;
+  const done=rows.filter(r=>String(r["Status"]||"").toUpperCase()==="DONE").length;
+  const error=rows.filter(r=>String(r["Status"]||"").toUpperCase()==="ERROR").length;
+  const total=rows.length;
+  return {queued,done,error,total};
+}
+function hasActiveAutoQueue(key){
+  const q=refillQueueStats(key);
+  return q.queued>0;
+}
 function latestRefillRequest(key){
   const list=REFILL_REQUESTS.filter(r=>r["Page Key"]===key && String(r["Request Status"]||"").toUpperCase()==="QA_PASSED");
   return list.sort((a,b)=>Number(b.__ROW_NUMBER__)-Number(a.__ROW_NUMBER__))[0]||null;
@@ -600,6 +613,11 @@ function renderRefillManager(){
         ${ws!=="NOT_STARTED"?`<button class="btn-reset" onclick="clearRefillWorkState('${esc(p.key)}')">ТӨЛӨВ ЦЭВЭРЛЭХ</button>`:""}
         ${latestRefillRequest(p.key)?`<button onclick="openRefillPreview('${esc(p.key)}')">${isRefillApproved(p.key,latestRefillRequest(p.key))?"БАГЦ ХАРАХ":"10 ПОСТ ХАРАХ"}</button>`:""}
         ${latestRefillRequest(p.key)&&!isRefillApproved(p.key,latestRefillRequest(p.key))&&p.key==="KINO_UZ"?`<button class="btn-done" onclick="approveRefill('${esc(p.key)}')">БАТЛАХ → НӨӨЦӨД НЭМЭХ</button>`:""}
+        ${p.key==="KINO_UZ" && p.refillNeedPosts>0
+          ? (hasActiveAutoQueue(p.key)
+              ? `<button class="btn-done" disabled>АВТО БЭЛТГЭЖ БАЙНА…</button>`
+              : `<button class="btn-done" onclick="startAutoRefill('${esc(p.key)}')">30 ХОНОГ ХҮРТЭЛ АВТО БЭЛТГЭХ</button>`)
+          : ""}
         <button onclick="openDetail('${esc(p.key)}')">ДЭЛГЭРЭНГҮЙ</button>
       </div>
     </div>`;
@@ -732,6 +750,42 @@ function openDetail(key) {
   document.getElementById("detailModal").classList.add("open");
 }
 function closeDetail(){document.getElementById("detailModal").classList.remove("open")}
+async function startAutoRefill(key){
+  const p=MODEL.find(x=>x.key===key);
+  if(!p || p.special || p.live || p.state!=="ACTIVE") return;
+  if(hasActiveAutoQueue(key)){toast("Энэ пэйжийн авто нөхөлтийн queue аль хэдийн ажиллаж байна.");return;}
+  const need=Math.max(0,Number(p.refillNeedPosts||0));
+  if(!need){toast("Нөхөх контент шаардлагагүй.");return;}
+  const sizes=[]; let left=need;
+  while(left>0){const n=Math.min(10,left);sizes.push(n);left-=n;}
+  const stamp=Date.now();
+  const now=new Date().toISOString();
+  const values=sizes.map((n,i)=>[
+    `AUTO-${key}-${stamp}-${String(i+1).padStart(2,"0")}`,
+    now,key,p.name,String(n),p.window||"",
+    String(p.notes||"").slice(0,500),
+    `System2 авто нөхөлт. Пэйжийн одоогийн хэв маягийг хадгал. Давхардал бүү үүсгэ. KINO_UZ бол 06:00 баримт, 17:00 үзэгчийн асуулт. Энэ batch-д ${n} пост.`,
+    "QUEUED","","","","","30"
+  ]);
+  if(!confirm(`${p.name}: ${need} постыг ${sizes.length} QA batch-аар автоматаар бэлтгэх үү?\n\nBatch: ${sizes.join(" + ")}\nЦонх хаасан ч Make worker үргэлжлүүлнэ.`)) return;
+  try{
+    document.querySelectorAll("button").forEach(b=>b.disabled=true);
+    const r=await fetch(CONTROL_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+      action:"REFILL_AUTO",pageKey:key,batchId:JSON.stringify({majorDimension:"ROWS",values}),confirm:"SYSTEM2_V2_REFILL_AUTO"
+    }),cache:"no-store"});
+    const data=await r.json();
+    if(!r.ok||!data.ok) throw new Error(data.error||`HTTP ${r.status}`);
+    toast(`${p.name} — ${need} пост, ${sizes.length} batch queue-д орлоо.`);
+    addLog("REFILL AUTO",p,`${need} пост · ${sizes.length} batch QUEUED`);
+    await new Promise(res=>setTimeout(res,800));
+    await loadLive();
+  }catch(e){
+    toast("Авто нөхөлт queue алдаа: "+e.message);
+  }finally{
+    document.querySelectorAll("button").forEach(b=>b.disabled=false);
+  }
+}
+
 async function startRefill(key){
   const p=MODEL.find(x=>x.key===key);
   if(!p || p.special || p.live || p.state!=="ACTIVE") return;
@@ -820,10 +874,11 @@ async function loadLive() {
     const res=await fetch(LIVE_ENDPOINT, {method:"GET", cache:"no-store"});
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const data=await res.json();
-    const pages=parseRows(data.pages), publisher=parseRows(data.publisher), refill=parseRows(data.refill);
+    const pages=parseRows(data.pages), publisher=parseRows(data.publisher), refill=parseRows(data.refill), refillQueue=parseRows(data.refillQueue);
     if(!pages.length) throw new Error("Pages өгөгдөл хоосон");
     PUBLISHER_ROWS=publisher;
     REFILL_REQUESTS=refill;
+    REFILL_QUEUE=refillQueue;
     MODEL=buildModel(pages,publisher);
     for(const p of MODEL){
       const req=latestRefillRequest(p.key);
