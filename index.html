@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>System2 Удирдлагын төв — v2.9.0</title>
+<title>System2 Удирдлагын төв — v2.9.1</title>
 <style>
 :root {
   --bg:#07111f; --panel:#0e1a2d; --panel2:#111f35; --line:#223653; --text:#eef5ff; --muted:#91a5c3;
@@ -123,7 +123,7 @@ tr:hover td{background:#11213a}
 <header>
   <div>
     <h1>System2 Удирдлагын төв</h1>
-    <div class="sub">v2.9.0 · Контент нөхөх · QA 85 · Авто batch queue</div>
+    <div class="sub">v2.9.1 · Контент нөхөх · QA 85 · Хэрэгцээт үед ажиллана</div>
   </div>
   <div class="top-right">
     <div class="badge live"><span id="feedPulse" class="pulse"></span><span id="feedText">Мэдээлэл…</span></div>
@@ -763,23 +763,26 @@ async function startAutoRefill(key){
   while(left>0){const n=Math.min(10,left);sizes.push(n);left-=n;}
   const stamp=Date.now();
   const now=new Date().toISOString();
-  const values=sizes.map((n,i)=>[
-    `AUTO-${key}-${stamp}-${String(i+1).padStart(2,"0")}`,
-    now,key,p.name,String(n),p.window||"",
-    String(p.notes||"").slice(0,500),
-    `System2 авто нөхөлт. Пэйжийн одоогийн хэв маягийг хадгал. Давхардал бүү үүсгэ. KINO_UZ бол 06:00 баримт, 17:00 үзэгчийн асуулт. Энэ batch-д ${n} пост.`,
-    "QUEUED","","","","","30"
-  ]);
+  const batches=sizes.map((n,i)=>({
+    jobId:`AUTO-${key}-${stamp}-${String(i+1).padStart(2,"0")}`,
+    pageKey:key,
+    pageName:p.name,
+    batchSize:n,
+    publishWindow:p.window||"",
+    pageNotes:String(p.notes||"").slice(0,500),
+    contentRules:`System2 авто нөхөлт. Пэйжийн одоогийн хэв маягийг хадгал. Давхардал бүү үүсгэ. KINO_UZ бол 06:00 баримт, 17:00 үзэгчийн асуулт. Энэ batch-д ${n} пост.`,
+    targetDays:30
+  }));
   if(!confirm(`${p.name}: ${need} постыг ${sizes.length} QA batch-аар автоматаар бэлтгэх үү?\n\nBatch: ${sizes.join(" + ")}\nЦонх хаасан ч Make worker үргэлжлүүлнэ.`)) return;
   try{
     document.querySelectorAll("button").forEach(b=>b.disabled=true);
     const r=await fetch(CONTROL_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
-      action:"REFILL_AUTO",pageKey:key,batchId:JSON.stringify({majorDimension:"ROWS",values}),confirm:"SYSTEM2_V2_REFILL_AUTO"
+      action:"REFILL_AUTO",pageKey:key,batchId:JSON.stringify({batches}),confirm:"SYSTEM2_V2_REFILL_AUTO"
     }),cache:"no-store"});
     const data=await r.json();
     if(!r.ok||!data.ok) throw new Error(data.error||`HTTP ${r.status}`);
-    toast(`${p.name} — ${need} пост, ${sizes.length} batch queue-д орлоо.`);
-    addLog("REFILL AUTO",p,`${need} пост · ${sizes.length} batch QUEUED`);
+    toast(`${p.name} — ${need} постын ${sizes.length} batch ажиллаж эхэллээ.`);
+    addLog("REFILL AUTO",p,`${need} пост · ${sizes.length} batch STARTED`);
     await new Promise(res=>setTimeout(res,800));
     await loadLive();
   }catch(e){
