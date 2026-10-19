@@ -6,12 +6,22 @@ module.exports = async function handler(req,res){
   const pageKey=String(body.pageKey||"");
   const batchId=String(body.batchId||"");
   const confirm=String(body.confirm||"");
-  if(!["PING","PAUSE","RESUME","REFILL","REFILL_APPROVE"].includes(action)) return res.status(400).json({ok:false,error:"INVALID_COMMAND"});
+  if(!["PING","PAUSE","RESUME","REFILL","REFILL_APPROVE","REFILL_AUTO"].includes(action)) return res.status(400).json({ok:false,error:"INVALID_COMMAND"});
   if(pageKey==="SENSUS_JP" && action!=="PING") return res.status(403).json({ok:false,error:"SPECIAL_WORKFLOW_LOCKED"});
   if(action==="PAUSE" && confirm!=="SYSTEM2_V2_PAUSE") return res.status(400).json({ok:false,error:"BAD_CONFIRMATION"});
   if(action==="RESUME" && confirm!=="SYSTEM2_V2_RESUME") return res.status(400).json({ok:false,error:"BAD_CONFIRMATION"});
   if(action==="REFILL" && confirm!=="SYSTEM2_V2_REFILL") return res.status(400).json({ok:false,error:"BAD_CONFIRMATION"});
   if(action==="REFILL_APPROVE" && confirm!=="SYSTEM2_V2_REFILL_APPROVE") return res.status(400).json({ok:false,error:"BAD_CONFIRMATION"});
+  if(action==="REFILL_AUTO" && confirm!=="SYSTEM2_V2_REFILL_AUTO") return res.status(400).json({ok:false,error:"BAD_CONFIRMATION"});
+  if(action==="REFILL_AUTO"){
+    let p;
+    try{p=JSON.parse(batchId);}catch(e){return res.status(400).json({ok:false,error:"INVALID_AUTO_REFILL_PAYLOAD"});}
+    const rows=Array.isArray(p?.values)?p.values:null;
+    if(p?.majorDimension!=="ROWS" || !rows?.length || rows.length>10) return res.status(400).json({ok:false,error:"INVALID_AUTO_REFILL_BATCHES"});
+    if(rows.some(r=>!Array.isArray(r) || r.length!==14 || String(r[2]||"")!==pageKey || String(r[8]||"")!=="QUEUED")){
+      return res.status(400).json({ok:false,error:"INVALID_AUTO_REFILL_ROWS"});
+    }
+  }
   if(action==="REFILL_APPROVE"){
     let p;
     try{p=JSON.parse(batchId);}catch(e){return res.status(400).json({ok:false,error:"INVALID_REFILL_PAYLOAD"});}
