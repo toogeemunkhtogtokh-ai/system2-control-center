@@ -12,6 +12,19 @@ module.exports = async function handler(req,res){
   if(action==="RESUME" && confirm!=="SYSTEM2_V2_RESUME") return res.status(400).json({ok:false,error:"BAD_CONFIRMATION"});
   if(action==="REFILL" && confirm!=="SYSTEM2_V2_REFILL") return res.status(400).json({ok:false,error:"BAD_CONFIRMATION"});
   if(action==="REFILL_APPROVE" && confirm!=="SYSTEM2_V2_REFILL_APPROVE") return res.status(400).json({ok:false,error:"BAD_CONFIRMATION"});
+  if(action==="REFILL_APPROVE"){
+    let p;
+    try{p=JSON.parse(batchId);}catch(e){return res.status(400).json({ok:false,error:"INVALID_REFILL_PAYLOAD"});}
+    const d=Array.isArray(p?.data)?p.data[0]:null;
+    const rows=Array.isArray(d?.values)?d.values:null;
+    const range=String(d?.range||"");
+    if(p?.valueInputOption!=="USER_ENTERED" || !/^Publisher!A\d+:L\d+$/.test(range) || !rows?.length || rows.length>20){
+      return res.status(409).json({ok:false,error:"REFILL_APPROVE_PAYLOAD_VERSION_MISMATCH",hint:"Refresh dashboard and try again."});
+    }
+    if(rows.some(r=>!Array.isArray(r) || r.length!==12 || String(r[1]||"")!==pageKey || String(r[5]||"").toUpperCase()!=="READY")){
+      return res.status(400).json({ok:false,error:"INVALID_READY_ROWS"});
+    }
+  }
   try{
     const upstream=process.env.SYSTEM2_CONTROL_URL;
     if(!upstream) return res.status(500).json({ok:false,error:"CONTROL_NOT_CONFIGURED"});
