@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>System2 Удирдлагын төв — v2.9.1</title>
+<title>System2 Удирдлагын төв — v2.10.0</title>
 <style>
 :root {
   --bg:#07111f; --panel:#0e1a2d; --panel2:#111f35; --line:#223653; --text:#eef5ff; --muted:#91a5c3;
@@ -123,7 +123,7 @@ tr:hover td{background:#11213a}
 <header>
   <div>
     <h1>System2 Удирдлагын төв</h1>
-    <div class="sub">v2.9.1 · Контент нөхөх · QA 85 · Хэрэгцээт үед ажиллана</div>
+    <div class="sub">v2.10.0 · Бүгдийг харах/батлах · Алдаатай batch-ийг дангаар retry</div>
   </div>
   <div class="top-right">
     <div class="badge live"><span id="feedPulse" class="pulse"></span><span id="feedText">Мэдээлэл…</span></div>
@@ -473,6 +473,30 @@ function isRefillApproved(key,req){
   const prefix=`REFILL-${key}-R${req.__ROW_NUMBER__}-`;
   return PUBLISHER_ROWS.some(r=>r["Page Key"]===key && String(r["Batch ID"]||"").startsWith(prefix));
 }
+function unapprovedRefillRequests(key){
+  return REFILL_REQUESTS
+    .filter(r=>r["Page Key"]===key && String(r["Request Status"]||"").toUpperCase()==="QA_PASSED")
+    .filter(r=>!isRefillApproved(key,r))
+    .sort((a,b)=>Number(a.__ROW_NUMBER__)-Number(b.__ROW_NUMBER__));
+}
+function allUnapprovedRefillPosts(key){
+  return unapprovedRefillRequests(key).flatMap(req=>{
+    const pkg=refillPackage(req);
+    return (pkg?.posts||[]).map((post,i)=>({...post,__requestRow:req.__ROW_NUMBER__,__requestIndex:i}));
+  });
+}
+function failedRefillBatches(key){
+  return REFILL_QUEUE
+    .filter(r=>r["Page Key"]===key && String(r["Status"]||"").toUpperCase()==="ERROR")
+    .sort((a,b)=>Number(a.__ROW_NUMBER__)-Number(b.__ROW_NUMBER__));
+}
+function isFailureRetried(row){
+  const job=String(row?.["Job ID"]||"");
+  if(!job) return false;
+  const prefix=`RETRY-${job}-`;
+  return REFILL_QUEUE.some(r=>String(r["Job ID"]||"").startsWith(prefix) &&
+    ["PROCESSING","DONE"].includes(String(r["Status"]||"").toUpperCase()));
+}
 function dateKey(d){
   const z=n=>String(n).padStart(2,"0");
   return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`;
@@ -575,6 +599,133 @@ async function approveRefill(key){
   }
 }
 
+function openAllRefillPreview(key){
+  const page=MODEL.find(p=>p.key===key);
+  const reqs=unapprovedRefillRequests(key);
+  const posts=allUnapprovedRefillPosts(key);
+  if(!page||!posts.length){toast("Батлах хүлээлттэй QA пост алга.");return;}
+  const avgs=reqs.map(r=>Number(refillPackage(r)?.average_score)).filter(Number.isFinite);
+  const avg=avgs.length?(avgs.reduce((a,b)=>a+b,0)/avgs.length).toFixed(1):"—";
+  document.getElementById("detailTitle").textContent=`${page.name} — БҮХ QA ПОСТ`;
+  document.getElementById("detailSub").textContent=`${reqs.length} batch · ${posts.length} пост · QA дундаж ${avg}`;
+  document.getElementById("detailBody").innerHTML=`
+    <div class="info-box"><strong>БАТЛАХАД БЭЛЭН</strong><br>
+    Бүх batch-ийг нэг дор шалгаад, нэг баталгаажуулалтаар READY нөөцөд оруулна.</div>
+    <div class="detail-section"><div class="table-wrap"><table class="mini-table">
+      <thead><tr><th>#</th><th>Batch</th><th>Цаг</th><th>Оноо</th><th>Гарчиг</th><th>Бичвэр</th><th>QA</th></tr></thead>
+      <tbody>${posts.map((x,i)=>`<tr>
+        <td>${i+1}</td>
+        <td class="mono">R${esc(x.__requestRow)}</td>
+        <td class="mono">${esc(x.scheduled_slot||"—")}</td>
+        <td><strong>${esc(x.score?.total??"—")}</strong></td>
+        <td>${esc(x.headline||"—")}</td>
+        <td style="white-space:normal;min-width:360px">${esc(x.post_text||"—")}</td>
+        <td style="white-space:normal;min-width:220px">${esc(x.qa_note||"—")}</td>
+      </tr>`).join("")}</tbody>
+    </table></div></div>
+    <div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn-done" onclick="approveAllRefills('${esc(key)}')">БҮГДИЙГ БАТЛАХ → READY</button>
+    </div>`;
+  document.getElementById("detailModal").classList.add("open");
+}
+
+async function approveAllRefills(key){
+  const page=MODEL.find(p=>p.key===key);
+  const reqs=unapprovedRefillRequests(key);
+  if(!page||!reqs.length){toast("Батлах хүлээлттэй batch алга.");return;}
+  if(key!=="KINO_UZ"){toast("Бүгдийг батлах одоогоор Кино үз workflow дээр баталгаажсан.");return;}
+
+  const tagged=reqs.flatMap(req=>{
+    const pkg=refillPackage(req);
+    return (pkg?.posts||[]).map((post,i)=>({...post,__requestRow:req.__ROW_NUMBER__,__requestIndex:i}));
+  });
+  if(!tagged.length){toast("Батлах пост олдсонгүй.");return;}
+
+  const scheduled=nextSlotDates(page,tagged.map(x=>({...x})));
+  const first=scheduled[0]?.__scheduledDate||"";
+  const last=scheduled[scheduled.length-1]?.__scheduledDate||"";
+  if(!confirm(`${page.name}: ${reqs.length} batch-ийн ${scheduled.length} постыг бүгдийг READY болгох уу?\n\nХугацаа: ${first} → ${last}\nНэг batch алдаа гарвал өмнөх амжилттай batch-ууд дахин нэмэгдэхгүй.`)) return;
+
+  const grouped=new Map();
+  for(const x of scheduled){
+    if(!grouped.has(x.__requestRow)) grouped.set(x.__requestRow,[]);
+    grouped.get(x.__requestRow).push(x);
+  }
+
+  let cursor=Math.max(1,...PUBLISHER_ROWS.map(r=>Number(r.__ROW_NUMBER__)||1))+1;
+  let added=0;
+  try{
+    document.querySelectorAll("button").forEach(b=>b.disabled=true);
+    for(const req of reqs){
+      const posts=grouped.get(req.__ROW_NUMBER__)||[];
+      if(!posts.length) continue;
+      const now=dateTimeLocal(new Date());
+      const values=posts.map((x,i)=>{
+        const caption=[x.headline,x.post_text].filter(Boolean).join("\n\n");
+        const slot=String(x.scheduled_slot||"").trim();
+        const scheduledTime=`${x.__scheduledDate} ${slot}`;
+        const batch=`REFILL-${key}-R${req.__ROW_NUMBER__}-${x.__scheduledDate}-${slot.replace(":","")}-${String(i+1).padStart(2,"0")}`;
+        return [now,key,caption,"","", "READY",scheduledTime,"","",batch,page.fbPageId,"OK"];
+      });
+      const r=await fetch(CONTROL_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        action:"REFILL_APPROVE",
+        pageKey:key,
+        batchId:JSON.stringify({
+          valueInputOption:"USER_ENTERED",
+          data:[{range:`Publisher!A${cursor}:L${cursor+values.length-1}`,majorDimension:"ROWS",values}]
+        }),
+        confirm:"SYSTEM2_V2_REFILL_APPROVE"
+      }),cache:"no-store"});
+      const data=await r.json();
+      if(!r.ok||!data.ok) throw new Error(`R${req.__ROW_NUMBER__}: ${data.error||`HTTP ${r.status}`}`);
+      cursor+=values.length;
+      added+=values.length;
+    }
+    toast(`${page.name} — ${added} пост READY нөөцөд нэмэгдлээ.`);
+    addLog("REFILL APPROVE ALL",page,`${reqs.length} batch · ${added} пост READY`);
+    closeDetail();
+    await new Promise(res=>setTimeout(res,900));
+    await loadLive();
+  }catch(e){
+    toast("Бүгдийг батлах алдаа: "+e.message);
+    await loadLive();
+  }finally{
+    document.querySelectorAll("button").forEach(b=>b.disabled=false);
+  }
+}
+
+async function retryFailedBatch(key,jobId){
+  const row=REFILL_QUEUE.find(r=>r["Page Key"]===key && r["Job ID"]===jobId && String(r["Status"]||"").toUpperCase()==="ERROR");
+  if(!row){toast("Алдаатай batch олдсонгүй.");return;}
+  if(isFailureRetried(row)){toast("Энэ batch аль хэдийн дахин ажилласан эсвэл ажиллаж байна.");return;}
+  const batch={
+    jobId:`RETRY-${jobId}-${Date.now()}`,
+    pageKey:key,
+    pageName:row["Page Name"]||MODEL.find(p=>p.key===key)?.name||key,
+    batchSize:Number(row["Batch Size"]||1),
+    publishWindow:row["Publish Window"]||"",
+    pageNotes:row["Page Notes"]||"",
+    contentRules:row["Content Rules"]||"",
+    targetDays:Number(row["Target Days"]||30)
+  };
+  try{
+    document.querySelectorAll("button").forEach(b=>b.disabled=true);
+    const r=await fetch(CONTROL_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+      action:"REFILL_AUTO",pageKey:key,batchId:JSON.stringify({batches:[batch]}),confirm:"SYSTEM2_V2_REFILL_AUTO"
+    }),cache:"no-store"});
+    const data=await r.json();
+    if(!r.ok||!data.ok) throw new Error(data.error||`HTTP ${r.status}`);
+    toast(`${jobId} — зөвхөн энэ batch дахин ажиллаж эхэллээ.`);
+    addLog("REFILL RETRY",MODEL.find(p=>p.key===key),jobId);
+    await new Promise(res=>setTimeout(res,700));
+    await loadLive();
+  }catch(e){
+    toast("Batch retry алдаа: "+e.message);
+  }finally{
+    document.querySelectorAll("button").forEach(b=>b.disabled=false);
+  }
+}
+
 function renderRefillManager(){
   const tasks=MODEL
     .filter(p=>!p.special && !p.live && p.state==="ACTIVE" && (p.runwayDays??999)<=14)
@@ -614,8 +765,11 @@ function renderRefillManager(){
             ? `<button class="btn-done" disabled>БЭЛТГЭЖ + QA ШАЛГАЖ БАЙНА…</button>`
             : ws==="ERROR" ? `<button class="btn-work" onclick="startRefill('${esc(p.key)}')">ДАХИН ОРОЛДОХ</button>` : `<button class="btn-work" onclick="startRefill('${esc(p.key)}')">ДАХИН БЭЛТГЭХ</button>`}
         ${ws!=="NOT_STARTED"?`<button class="btn-reset" onclick="clearRefillWorkState('${esc(p.key)}')">ТӨЛӨВ ЦЭВЭРЛЭХ</button>`:""}
-        ${latestRefillRequest(p.key)?`<button onclick="openRefillPreview('${esc(p.key)}')">${isRefillApproved(p.key,latestRefillRequest(p.key))?"БАГЦ ХАРАХ":"10 ПОСТ ХАРАХ"}</button>`:""}
-        ${latestRefillRequest(p.key)&&!isRefillApproved(p.key,latestRefillRequest(p.key))&&p.key==="KINO_UZ"?`<button class="btn-done" onclick="approveRefill('${esc(p.key)}')">БАТЛАХ → НӨӨЦӨД НЭМЭХ</button>`:""}
+        ${p.key==="KINO_UZ" && unapprovedRefillRequests(p.key).length
+          ? `<button onclick="openAllRefillPreview('${esc(p.key)}')">БҮГДИЙГ ХАРАХ · ${allUnapprovedRefillPosts(p.key).length}</button>
+             <button class="btn-done" onclick="approveAllRefills('${esc(p.key)}')">БҮГДИЙГ БАТЛАХ</button>`
+          : (latestRefillRequest(p.key)?`<button onclick="openRefillPreview('${esc(p.key)}')">БАГЦ ХАРАХ</button>`:"")}
+        ${failedRefillBatches(p.key).filter(x=>!isFailureRetried(x)).map(x=>`<button class="btn-work" onclick="retryFailedBatch('${esc(p.key)}','${esc(x["Job ID"])}')">АЛДААТАЙ BATCH → ДАХИН ОРОЛДОХ</button>`).join("")}
         ${p.key==="KINO_UZ" && p.refillNeedPosts>0
           ? (hasActiveAutoQueue(p.key)
               ? `<button class="btn-done" disabled>АВТО БЭЛТГЭЖ БАЙНА…</button>`
