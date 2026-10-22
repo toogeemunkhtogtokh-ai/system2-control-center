@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>System2 Удирдлагын төв — v2.11.0</title>
+<title>System2 Удирдлагын төв — v2.12.0</title>
 <style>
 :root {
   --bg:#07111f; --panel:#0e1a2d; --panel2:#111f35; --line:#223653; --text:#eef5ff; --muted:#91a5c3;
@@ -123,7 +123,7 @@ tr:hover td{background:#11213a}
 <header>
   <div>
     <h1>System2 Удирдлагын төв</h1>
-    <div class="sub">v2.11.0 · SportZ image gate · Баталсны дараа зураг нөхөөд READY</div>
+    <div class="sub">v2.12.0 · System2 image gate · Зураг шаарддаг бүх пэйж</div>
   </div>
   <div class="top-right">
     <div class="badge live"><span id="feedPulse" class="pulse"></span><span id="feedText">Мэдээлэл…</span></div>
@@ -497,9 +497,22 @@ function isFailureRetried(row){
   return REFILL_QUEUE.some(r=>String(r["Job ID"]||"").startsWith(prefix) &&
     ["PROCESSING","DONE"].includes(String(r["Status"]||"").toUpperCase()));
 }
+function system2ImageRequired(key,slot){
+  const t=String(slot||"").trim();
+  const rules={
+    SPORTZ_MN:["19:00"],
+    SENSUS_JP:["10:00","14:00","17:00"],
+    KINO_UZ:["20:00"],
+    FRESH_CLEAN:["06:00","20:00"],
+    HUUCHIN_BARAANII_ONLINE:["09:00","20:00"],
+    ANZAAR_TV:["22:00"],
+    GIVE_TV:["*"]
+  };
+  const slots=rules[key]||[];
+  return slots.includes("*")||slots.includes(t);
+}
 function refillApprovalStatus(key,slot){
-  if(key==="SPORTZ_MN") return "IMAGE_PENDING";
-  return "READY";
+  return system2ImageRequired(key,slot) ? "IMAGE_PENDING" : "READY";
 }
 function dateKey(d){
   const z=n=>String(n).padStart(2,"0");
