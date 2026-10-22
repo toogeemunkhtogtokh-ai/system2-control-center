@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>System2 Удирдлагын төв — v2.13.0</title>
+<title>System2 Удирдлагын төв — v2.13.1</title>
 <style>
 :root {
   --bg:#07111f; --panel:#0e1a2d; --panel2:#111f35; --line:#223653; --text:#eef5ff; --muted:#91a5c3;
@@ -123,7 +123,7 @@ tr:hover td{background:#11213a}
 <header>
   <div>
     <h1>System2 Удирдлагын төв</h1>
-    <div class="sub">v2.13.0 · Ирэх 7 хоногийн постын бэлэн байдлын хяналт</div>
+    <div class="sub">v2.13.1 · Ирэх 7 хоногийн гарчиг + зурагны төлөв</div>
   </div>
   <div class="top-right">
     <div class="badge live"><span id="feedPulse" class="pulse"></span><span id="feedText">Мэдээлэл…</span></div>
@@ -400,22 +400,62 @@ function addLog(action,page,result) {
     <div class="logline"><div><strong>${esc(x.action)} · ${esc(x.page)}</strong><div class="muted">${esc(x.result)}</div></div>
     <div class="mono muted">${x.time.toLocaleTimeString("mn-MN")}</div></div>`).join("");
 }
+function headlineFromCaption(caption){
+  const t=String(caption||"").trim();
+  if(!t) return "Гарчиггүй";
+  const first=t.split(/\n+/).map(x=>x.trim()).find(Boolean)||t;
+  return first.length>90?first.slice(0,87)+"…":first;
+}
+function future7Posts(p){
+  const now=new Date(), end=new Date(now.getTime()+7*86400000);
+  return (p.allRows||[])
+    .filter(r=>{const t=dt(r["Scheduled Time"]); return t&&t>=now&&t<end;})
+    .sort((a,b)=>dt(a["Scheduled Time"])-dt(b["Scheduled Time"]));
+}
+function imageState(r){
+  const has=!!String(r["Image URL"]||"").trim();
+  const st=String(r["Status"]||"").toUpperCase();
+  if(has) return "ЗУРАГТАЙ";
+  if(st==="IMAGE_PENDING") return "ЗУРАГ ХҮЛЭЭЖ БАЙНА";
+  return "ЗУРАГГҮЙ";
+}
+function openFuture7Preview(key){
+  const p=MODEL.find(x=>x.key===key); if(!p) return;
+  const rows=future7Posts(p);
+  document.getElementById("detailTitle").textContent=p.name+" — Ирэх 7 хоног";
+  document.getElementById("detailSub").textContent=rows.length?rows.length+" төлөвлөсөн пост":"Төлөвлөсөн пост алга";
+  document.getElementById("detailBody").innerHTML=rows.length?`
+    <div class="detail-section"><div class="table-wrap"><table class="mini-table">
+      <thead><tr><th>Огноо</th><th>Гарчиг</th><th>Зураг</th><th>Төлөв</th></tr></thead>
+      <tbody>${rows.map(r=>`<tr>
+        <td class="mono">${esc(r["Scheduled Time"]||"—")}</td>
+        <td style="white-space:normal;min-width:320px">${esc(headlineFromCaption(r["Post Caption"]))}</td>
+        <td>${esc(imageState(r))}</td>
+        <td>${esc(String(r["Status"]||"—").toUpperCase())}</td>
+      </tr>`).join("")}</tbody>
+    </table></div></div>`:
+    '<div class="info-box">Ирэх 7 хоногт Publisher дээр төлөвлөсөн пост алга.</div>';
+  document.getElementById("detailModal").classList.add("open");
+}
 function future7Html(p){
-  if(p.state==="PAUSED") return '<span class="runway low">ТҮР ЗОГССОН</span>';
-  if(p.live) return '<span class="runway ok">ӨДӨР БҮР БЭЛТГЭНЭ</span>';
-  if(p.special){
+  let inner='';
+  if(p.state==="PAUSED") inner='<span class="runway low">ТҮР ЗОГССОН</span>';
+  else if(p.live) inner='<span class="runway ok">ӨДӨР БҮР БЭЛТГЭНЭ</span>';
+  else if(p.special){
     const now=new Date(), end=new Date(now.getTime()+7*86400000);
     const n=(p.allRows||[]).filter(r=>{
       const t=dt(r["Scheduled Time"]);
       return t && t>=now && t<end && String(r["Status"]||"").toUpperCase()==="READY";
     }).length;
-    return n?'<span class="runway ok">'+n+' ПОСТ БЭЛЭН</span>':'<span class="runway low">ШАЛГАХ</span>';
+    inner=n?'<span class="runway ok">'+n+' ПОСТ БЭЛЭН</span>':'<span class="runway low">ШАЛГАХ</span>';
+  } else {
+    const ready=p.future7Ready||0, img=p.future7ImagePending||0, miss=p.future7Missing||0, exp=p.future7Expected||0;
+    if(miss===0 && img===0 && exp>0) inner='<span class="runway ok">БҮРЭН БЭЛЭН · '+ready+'/'+exp+'</span>';
+    else if(miss===0 && img>0) inner='<span class="runway low">ЗУРАГ ХҮЛЭЭЖ БАЙНА · '+img+'</span>';
+    else if(miss>0) inner='<span class="runway action">ДУТУУ · '+miss+' ПОСТ</span>';
+    else inner='<span class="runway low">ШАЛГАХ</span>';
   }
-  const ready=p.future7Ready||0, img=p.future7ImagePending||0, miss=p.future7Missing||0, exp=p.future7Expected||0;
-  if(miss===0 && img===0 && exp>0) return '<span class="runway ok">БҮРЭН БЭЛЭН · '+ready+'/'+exp+'</span>';
-  if(miss===0 && img>0) return '<span class="runway low">ЗУРАГ ХҮЛЭЭЖ БАЙНА · '+img+'</span>';
-  if(miss>0) return '<span class="runway action">ДУТУУ · '+miss+' ПОСТ</span>';
-  return '<span class="runway low">ШАЛГАХ</span>';
+  return '<button class="linkbtn" onclick="openFuture7Preview(\''+esc(p.key)+'\')">'+inner+'</button>';
 }
 function runwayHtml(p) {
   if(p.special || p.live || p.state==="PAUSED") return "—";
