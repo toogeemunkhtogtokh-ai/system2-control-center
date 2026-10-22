@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>System2 Удирдлагын төв — v2.12.0</title>
+<title>System2 Удирдлагын төв — v2.12.1</title>
 <style>
 :root {
   --bg:#07111f; --panel:#0e1a2d; --panel2:#111f35; --line:#223653; --text:#eef5ff; --muted:#91a5c3;
@@ -123,7 +123,7 @@ tr:hover td{background:#11213a}
 <header>
   <div>
     <h1>System2 Удирдлагын төв</h1>
-    <div class="sub">v2.12.0 · System2 image gate · Зураг шаарддаг бүх пэйж</div>
+    <div class="sub">v2.12.1 · Нэгдсэн System2 refill + image gate</div>
   </div>
   <div class="top-right">
     <div class="badge live"><span id="feedPulse" class="pulse"></span><span id="feedText">Мэдээлэл…</span></div>
@@ -571,8 +571,7 @@ function openRefillPreview(key){
 async function approveRefill(key){
   const page=MODEL.find(p=>p.key===key), req=latestRefillRequest(key), pkg=refillPackage(req);
   if(!page||!req||!pkg?.posts?.length) return;
-  if(!["KINO_UZ","SPORTZ_MN"].includes(key)){toast("READY approval энэ пэйж дээр хараахан идэвхжээгүй.");return;}
-  if(isRefillApproved(key,req)){toast("Энэ багц аль хэдийн нөөцөд нэмэгдсэн.");return;}
+    if(isRefillApproved(key,req)){toast("Энэ багц аль хэдийн нөөцөд нэмэгдсэн.");return;}
   const posts=nextSlotDates(page,pkg.posts.map(x=>({...x})));
   const now=dateTimeLocal(new Date());
   const values=posts.map((x,i)=>{
@@ -650,8 +649,7 @@ async function approveAllRefills(key){
   const page=MODEL.find(p=>p.key===key);
   const reqs=unapprovedRefillRequests(key);
   if(!page||!reqs.length){toast("Батлах хүлээлттэй batch алга.");return;}
-  if(!["KINO_UZ","SPORTZ_MN"].includes(key)){toast("Бүгдийг батлах энэ пэйж дээр хараахан идэвхжээгүй.");return;}
-
+  
   const tagged=reqs.flatMap(req=>{
     const pkg=refillPackage(req);
     return (pkg?.posts||[]).map((post,i)=>({...post,__requestRow:req.__ROW_NUMBER__,__requestIndex:i}));
@@ -782,12 +780,12 @@ function renderRefillManager(){
             ? `<button class="btn-done" disabled>БЭЛТГЭЖ + QA ШАЛГАЖ БАЙНА…</button>`
             : ws==="ERROR" ? `<button class="btn-work" onclick="startRefill('${esc(p.key)}')">ДАХИН ОРОЛДОХ</button>` : `<button class="btn-work" onclick="startRefill('${esc(p.key)}')">ДАХИН БЭЛТГЭХ</button>`}
         ${ws!=="NOT_STARTED"?`<button class="btn-reset" onclick="clearRefillWorkState('${esc(p.key)}')">ТӨЛӨВ ЦЭВЭРЛЭХ</button>`:""}
-        ${["KINO_UZ","SPORTZ_MN"].includes(p.key) && unapprovedRefillRequests(p.key).length
+        ${unapprovedRefillRequests(p.key).length
           ? `<button onclick="openAllRefillPreview('${esc(p.key)}')">БҮГДИЙГ ХАРАХ · ${allUnapprovedRefillPosts(p.key).length}</button>
              <button class="btn-done" onclick="approveAllRefills('${esc(p.key)}')">БҮГДИЙГ БАТЛАХ</button>`
           : (latestRefillRequest(p.key)?`<button onclick="openRefillPreview('${esc(p.key)}')">БАГЦ ХАРАХ</button>`:"")}
         ${failedRefillBatches(p.key).filter(x=>!isFailureRetried(x)).map(x=>`<button class="btn-work" onclick="retryFailedBatch('${esc(p.key)}','${esc(x["Job ID"])}')">АЛДААТАЙ BATCH → ДАХИН ОРОЛДОХ</button>`).join("")}
-        ${["KINO_UZ","SPORTZ_MN"].includes(p.key) && p.refillNeedPosts>0
+        ${p.refillNeedPosts>0
           ? (hasActiveAutoQueue(p.key)
               ? `<button class="btn-done" disabled>АВТО БЭЛТГЭЖ БАЙНА…</button>`
               : `<button class="btn-done" onclick="startAutoRefill('${esc(p.key)}')">30 ХОНОГ ХҮРТЭЛ АВТО БЭЛТГЭХ</button>`)
