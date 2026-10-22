@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>System2 Удирдлагын төв — v2.10.1</title>
+<title>System2 Удирдлагын төв — v2.11.0</title>
 <style>
 :root {
   --bg:#07111f; --panel:#0e1a2d; --panel2:#111f35; --line:#223653; --text:#eef5ff; --muted:#91a5c3;
@@ -123,7 +123,7 @@ tr:hover td{background:#11213a}
 <header>
   <div>
     <h1>System2 Удирдлагын төв</h1>
-    <div class="sub">v2.10.1 · SportZ approval + auto refill · Batch retry</div>
+    <div class="sub">v2.11.0 · SportZ image gate · Баталсны дараа зураг нөхөөд READY</div>
   </div>
   <div class="top-right">
     <div class="badge live"><span id="feedPulse" class="pulse"></span><span id="feedText">Мэдээлэл…</span></div>
@@ -497,6 +497,10 @@ function isFailureRetried(row){
   return REFILL_QUEUE.some(r=>String(r["Job ID"]||"").startsWith(prefix) &&
     ["PROCESSING","DONE"].includes(String(r["Status"]||"").toUpperCase()));
 }
+function refillApprovalStatus(key,slot){
+  if(key==="SPORTZ_MN") return "IMAGE_PENDING";
+  return "READY";
+}
 function dateKey(d){
   const z=n=>String(n).padStart(2,"0");
   return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`;
@@ -563,7 +567,7 @@ async function approveRefill(key){
     const slot=String(x.scheduled_slot||"").trim();
     const scheduled=`${x.__scheduledDate} ${slot}`;
     const batch=`REFILL-${key}-R${req.__ROW_NUMBER__}-${x.__scheduledDate}-${slot.replace(":","")}-${String(i+1).padStart(2,"0")}`;
-    return [now,key,caption,"","", "READY",scheduled,"","",batch,page.fbPageId,"OK"];
+    return [now,key,caption,"","", refillApprovalStatus(key,slot),scheduled,"","",batch,page.fbPageId,"OK"];
   });
   const first=values[0]?.[6]||"", last=values[values.length-1]?.[6]||"";
   if(!confirm(`${page.name}: ${values.length} постыг READY нөөцөд нэмэх үү?\n\nХугацаа: ${first} → ${last}\nНийтлэхийн өмнө Core Publisher цагийг нь хүлээнэ.`)) return;
@@ -665,7 +669,7 @@ async function approveAllRefills(key){
         const slot=String(x.scheduled_slot||"").trim();
         const scheduledTime=`${x.__scheduledDate} ${slot}`;
         const batch=`REFILL-${key}-R${req.__ROW_NUMBER__}-${x.__scheduledDate}-${slot.replace(":","")}-${String(i+1).padStart(2,"0")}`;
-        return [now,key,caption,"","", "READY",scheduledTime,"","",batch,page.fbPageId,"OK"];
+        return [now,key,caption,"","", refillApprovalStatus(key,slot),scheduledTime,"","",batch,page.fbPageId,"OK"];
       });
       const r=await fetch(CONTROL_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
         action:"REFILL_APPROVE",
