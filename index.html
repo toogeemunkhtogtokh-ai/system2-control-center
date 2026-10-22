@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>System2 Удирдлагын төв — v2.12.1</title>
+<title>System2 Удирдлагын төв — v2.13.0</title>
 <style>
 :root {
   --bg:#07111f; --panel:#0e1a2d; --panel2:#111f35; --line:#223653; --text:#eef5ff; --muted:#91a5c3;
@@ -123,7 +123,7 @@ tr:hover td{background:#11213a}
 <header>
   <div>
     <h1>System2 Удирдлагын төв</h1>
-    <div class="sub">v2.12.1 · Нэгдсэн System2 refill + image gate</div>
+    <div class="sub">v2.13.0 · Ирэх 7 хоногийн постын бэлэн байдлын хяналт</div>
   </div>
   <div class="top-right">
     <div class="badge live"><span id="feedPulse" class="pulse"></span><span id="feedText">Мэдээлэл…</span></div>
@@ -170,8 +170,8 @@ tr:hover td{background:#11213a}
   </div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Пэйж</th><th>Төлөв</th><th>Бэлэн</th><th>Хүрэлцэх хоног</th><th>Контент нөхөх төлөвлөгөө</th><th>Дараагийн пост</th><th>Контент дуусах</th><th>Сүүлд нийтэлсэн</th><th>Одоогийн асуудал</th><th>Удирдлага</th></tr></thead>
-      <tbody id="tbody"><tr><td colspan="10" class="muted">Өгөгдөл ачаалж байна…</td></tr></tbody>
+      <thead><tr><th>Пэйж</th><th>Төлөв</th><th>Ирэх 7 хоног</th><th>Бэлэн</th><th>Хүрэлцэх хоног</th><th>Контент нөхөх төлөвлөгөө</th><th>Дараагийн пост</th><th>Контент дуусах</th><th>Сүүлд нийтэлсэн</th><th>Одоогийн асуудал</th><th>Удирдлага</th></tr></thead>
+      <tbody id="tbody"><tr><td colspan="11" class="muted">Өгөгдөл ачаалж байна…</td></tr></tbody>
     </table>
   </div>
 </section>
@@ -312,6 +312,7 @@ function rowTime(r) {
 }
 function buildModel(pages, pub) {
   const now = new Date();
+  const sevenDaysLater = new Date(now.getTime()+7*86400000);
   return canonicalPages(pages)
     .filter(p => p["Page Key"] && p["Page Key"] !== "ZAR_MEDIA_TEST")
     .map(p => {
@@ -335,6 +336,13 @@ function buildModel(pages, pub) {
         .sort((a,b)=>(rowTime(b)||0)-(rowTime(a)||0));
       const next=readyRows.length ? dt(readyRows[0]["Scheduled Time"]) : null;
       const stockEnd=readyRows.length ? dt(readyRows[readyRows.length-1]["Scheduled Time"]) : null;
+      const future7Rows=rows.filter(r=>{
+        const t=dt(r["Scheduled Time"]);
+        return t && t>=now && t<sevenDaysLater;
+      });
+      const future7Ready=future7Rows.filter(r=>String(r["Status"]||"").toUpperCase()==="READY").length;
+      const future7ImagePending=future7Rows.filter(r=>String(r["Status"]||"").toUpperCase()==="IMAGE_PENDING").length;
+      const future7Draft=future7Rows.filter(r=>["DRAFT","HOLD","MANUAL_REVIEW","ERROR"].includes(String(r["Status"]||"").toUpperCase())).length;
       const notes=String(p["Notes"]||"");
       const state = enabled ? "ACTIVE" : "PAUSED";
       const counts={};
@@ -354,6 +362,8 @@ function buildModel(pages, pub) {
         .sort((a,b)=>(rowTime(b)||0)-(rowTime(a)||0)).slice(0,10);
       const windowText=p["Default Publish Window"]||"—";
       const postsPerDay=(special||live)?null:(key==="KINO_UZ"?2:estimatePostsPerDay(windowText));
+      const future7Expected=(special||live||!postsPerDay)?null:Math.max(1,Math.round(postsPerDay*7));
+      const future7Missing=future7Expected==null?null:Math.max(0,future7Expected-future7Ready-future7ImagePending);
       const refillNeedDays=(special||live||state==="PAUSED")?0:Math.max(0,REFILL_TARGET_DAYS-(runwayDays||0));
       const refillNeedPosts=postsPerDay?Math.max(0,Math.ceil(refillNeedDays*postsPerDay)):null;
       return {
@@ -364,6 +374,7 @@ function buildModel(pages, pub) {
         window:windowText, lastHealthCheck:p["Last Health Check"]||"",
         fbPageId:p["Facebook Page ID"]||"",
         postsPerDay, refillNeedDays, refillNeedPosts,
+        future7Expected,future7Ready,future7ImagePending,future7Draft,future7Missing,
         counts, upcomingRows, recentRows, allRows:rows
       };
     })
@@ -388,6 +399,23 @@ function addLog(action,page,result) {
   document.getElementById("log").innerHTML=COMMAND_LOG.map(x=>`
     <div class="logline"><div><strong>${esc(x.action)} · ${esc(x.page)}</strong><div class="muted">${esc(x.result)}</div></div>
     <div class="mono muted">${x.time.toLocaleTimeString("mn-MN")}</div></div>`).join("");
+}
+function future7Html(p){
+  if(p.state==="PAUSED") return '<span class="runway low">ТҮР ЗОГССОН</span>';
+  if(p.live) return '<span class="runway ok">ӨДӨР БҮР БЭЛТГЭНЭ</span>';
+  if(p.special){
+    const now=new Date(), end=new Date(now.getTime()+7*86400000);
+    const n=(p.allRows||[]).filter(r=>{
+      const t=dt(r["Scheduled Time"]);
+      return t && t>=now && t<end && String(r["Status"]||"").toUpperCase()==="READY";
+    }).length;
+    return n?'<span class="runway ok">'+n+' ПОСТ БЭЛЭН</span>':'<span class="runway low">ШАЛГАХ</span>';
+  }
+  const ready=p.future7Ready||0, img=p.future7ImagePending||0, miss=p.future7Missing||0, exp=p.future7Expected||0;
+  if(miss===0 && img===0 && exp>0) return '<span class="runway ok">БҮРЭН БЭЛЭН · '+ready+'/'+exp+'</span>';
+  if(miss===0 && img>0) return '<span class="runway low">ЗУРАГ ХҮЛЭЭЖ БАЙНА · '+img+'</span>';
+  if(miss>0) return '<span class="runway action">ДУТУУ · '+miss+' ПОСТ</span>';
+  return '<span class="runway low">ШАЛГАХ</span>';
 }
 function runwayHtml(p) {
   if(p.special || p.live || p.state==="PAUSED") return "—";
@@ -829,6 +857,7 @@ function render() {
     <tr title="${esc(p.notes)}">
       <td><button class="linkbtn" onclick="openDetail('${esc(p.key)}')">${esc(p.name)}</button><div class="key">${esc(p.key)} · row ${p.row}${p.special?' · ТУСГАЙ АЖИЛЛАГААТАЙ':''}</div></td>
       <td>${pill(p.health)}</td>
+      <td>${future7Html(p)}</td>
       <td class="mono">${(p.special||p.live)?'—':p.ready}</td>
       <td>${runwayHtml(p)}</td>
       <td>${refillHtml(p)}</td>
@@ -841,7 +870,7 @@ function render() {
         : (p.state==="ACTIVE"
           ? `<button class="btn-pause" onclick="controlPage('PAUSE','${esc(p.key)}',${p.row})">ТҮР ЗОГСООХ</button>`
           : `<button class="btn-resume" onclick="controlPage('RESUME','${esc(p.key)}',${p.row})">ҮРГЭЛЖЛҮҮЛЭХ</button>`)}</td>
-    </tr>`).join("") : `<tr><td colspan="10" class="muted">Тохирох пэйж алга.</td></tr>`;
+    </tr>`).join("") : `<tr><td colspan="11" class="muted">Тохирох пэйж алга.</td></tr>`;
 
   document.getElementById("active").textContent=MODEL.filter(p=>p.state==="ACTIVE").length;
   document.getElementById("paused").textContent=MODEL.filter(p=>p.state==="PAUSED").length;
