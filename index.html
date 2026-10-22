@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>System2 Удирдлагын төв — v2.13.1</title>
+<title>System2 Удирдлагын төв — v2.14.0</title>
 <style>
 :root {
   --bg:#07111f; --panel:#0e1a2d; --panel2:#111f35; --line:#223653; --text:#eef5ff; --muted:#91a5c3;
@@ -123,7 +123,7 @@ tr:hover td{background:#11213a}
 <header>
   <div>
     <h1>System2 Удирдлагын төв</h1>
-    <div class="sub">v2.13.1 · Ирэх 7 хоногийн гарчиг + зурагны төлөв</div>
+    <div class="sub">v2.14.0 · Бүх READY пост, зураг ба нийтлэх цагийн задаргаа</div>
   </div>
   <div class="top-right">
     <div class="badge live"><span id="feedPulse" class="pulse"></span><span id="feedText">Мэдээлэл…</span></div>
@@ -138,7 +138,7 @@ tr:hover td{background:#11213a}
 <div class="grid">
   <div class="card kpi"><div class="label">Идэвхтэй пэйжүүд</div><div class="num" id="active">—</div></div>
   <div class="card kpi"><div class="label">Түр зогсоосон</div><div class="num" id="paused">—</div></div>
-  <div class="card kpi"><div class="label">Нийтлэхэд бэлэн пост</div><div class="num" id="ready">—</div></div>
+  <div class="card kpi"><div class="label">Publisher-ийн READY пост</div><div class="num" id="ready">—</div></div>
   <div class="card kpi"><div class="label">Анхаарах шаардлагатай</div><div class="num" id="attention">—</div><div class="muted" id="attentionBreakdown" style="font-size:11px;margin-top:4px">—</div></div>
   <div class="card kpi"><div class="label">Шууд мэдээлэл</div><div class="num" id="feedKpi" style="font-size:21px;margin-top:9px">—</div></div>
   <div class="card kpi"><div class="label">Удирдлагын холболт</div><div class="num" id="ctrlKpi" style="font-size:21px;margin-top:9px">ХЭРЭГЦЭЭТ ҮЕД</div></div>
@@ -170,8 +170,8 @@ tr:hover td{background:#11213a}
   </div>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Пэйж</th><th>Төлөв</th><th>Ирэх 7 хоног</th><th>Бэлэн</th><th>Хүрэлцэх хоног</th><th>Контент нөхөх төлөвлөгөө</th><th>Дараагийн пост</th><th>Контент дуусах</th><th>Сүүлд нийтэлсэн</th><th>Одоогийн асуудал</th><th>Удирдлага</th></tr></thead>
-      <tbody id="tbody"><tr><td colspan="11" class="muted">Өгөгдөл ачаалж байна…</td></tr></tbody>
+      <thead><tr><th>Пэйж</th><th>Төлөв</th><th>Нийт бэлэн пост</th><th>Нийтлэх цагууд</th><th>Хүрэлцэх хоног</th><th>Контент нөхөх төлөвлөгөө</th><th>Дараагийн пост</th><th>Контент дуусах</th><th>Сүүлд нийтэлсэн</th><th>Одоогийн асуудал</th><th>Удирдлага</th></tr></thead>
+      <tbody id="tbody"><tr><td colspan="10" class="muted">Өгөгдөл ачаалж байна…</td></tr></tbody>
     </table>
   </div>
 </section>
@@ -323,6 +323,10 @@ function buildModel(pages, pub) {
       const rows=pub.filter(r=>r["Page Key"]===key);
       const readyRows=rows.filter(r=>String(r["Status"]).toUpperCase()==="READY" && dt(r["Scheduled Time"]) && dt(r["Scheduled Time"])>=now)
         .sort((a,b)=>dt(a["Scheduled Time"])-dt(b["Scheduled Time"]));
+      const readyAllRows=rows.filter(r=>String(r["Status"]||"").toUpperCase()==="READY");
+      const readyWithImage=readyAllRows.filter(r=>String(r["Image URL"]||"").trim()).length;
+      const readyWithoutImage=readyAllRows.length-readyWithImage;
+      const readyTimeGroups=readySlotGroups(readyAllRows);
       const postedRows=rows.filter(r=>String(r["Status"]).toUpperCase()==="POSTED" && rowTime(r))
         .sort((a,b)=>(rowTime(b)||0)-(rowTime(a)||0));
       const last=postedRows.length ? rowTime(postedRows[0]) : null;
@@ -368,7 +372,7 @@ function buildModel(pages, pub) {
       const refillNeedPosts=postsPerDay?Math.max(0,Math.ceil(refillNeedDays*postsPerDay)):null;
       return {
         row:Number(p.__ROW_NUMBER__), key, name:p["Page Name"]||key, state, health, special, live,
-        ready:(special||live)?null:readyRows.length,next:(special||live)?null:next,stockEnd:(special||live)?null:stockEnd,last,runwayDays,
+        ready:(special||live)?null:readyRows.length,readyAllRows,readyAllCount:readyAllRows.length,readyWithImage,readyWithoutImage,readyTimeGroups,next:(special||live)?null:next,stockEnd:(special||live)?null:stockEnd,last,runwayDays,
         currentError:special?"":(actionableErrors[0]?.["Error"]||""),
         currentErrors:actionableErrors, historicalErrors, notes,
         window:windowText, lastHealthCheck:p["Last Health Check"]||"",
@@ -406,56 +410,64 @@ function headlineFromCaption(caption){
   const first=t.split(/\n+/).map(x=>x.trim()).find(Boolean)||t;
   return first.length>90?first.slice(0,87)+"…":first;
 }
-function future7Posts(p){
-  const now=new Date(), end=new Date(now.getTime()+7*86400000);
+function readyPosts(p){
   return (p.allRows||[])
-    .filter(r=>{const t=dt(r["Scheduled Time"]); return t&&t>=now&&t<end;})
-    .sort((a,b)=>dt(a["Scheduled Time"])-dt(b["Scheduled Time"]));
+    .filter(r=>String(r["Status"]||"").toUpperCase()==="READY")
+    .sort((a,b)=>{
+      const ta=dt(a["Scheduled Time"]), tb=dt(b["Scheduled Time"]);
+      return (ta?ta.getTime():Number.MAX_SAFE_INTEGER)-(tb?tb.getTime():Number.MAX_SAFE_INTEGER);
+    });
 }
 function imageState(r){
-  const has=!!String(r["Image URL"]||"").trim();
-  const st=String(r["Status"]||"").toUpperCase();
-  if(has) return "ЗУРАГТАЙ";
-  if(st==="IMAGE_PENDING") return "ЗУРАГ ХҮЛЭЭЖ БАЙНА";
-  return "ЗУРАГГҮЙ";
+  return String(r["Image URL"]||"").trim() ? "ЗУРАГТАЙ" : "ЗУРАГГҮЙ";
 }
-function openFuture7Preview(key){
-  const p=MODEL.find(x=>x.key===key); if(!p) return;
-  const rows=future7Posts(p);
-  document.getElementById("detailTitle").textContent=p.name+" — Ирэх 7 хоног";
-  document.getElementById("detailSub").textContent=rows.length?rows.length+" төлөвлөсөн пост":"Төлөвлөсөн пост алга";
-  document.getElementById("detailBody").innerHTML=rows.length?`
-    <div class="detail-section"><div class="table-wrap"><table class="mini-table">
-      <thead><tr><th>Огноо</th><th>Гарчиг</th><th>Зураг</th><th>Төлөв</th></tr></thead>
-      <tbody>${rows.map(r=>`<tr>
-        <td class="mono">${esc(r["Scheduled Time"]||"—")}</td>
-        <td style="white-space:normal;min-width:320px">${esc(headlineFromCaption(r["Post Caption"]))}</td>
-        <td>${esc(imageState(r))}</td>
-        <td>${esc(String(r["Status"]||"—").toUpperCase())}</td>
-      </tr>`).join("")}</tbody>
-    </table></div></div>`:
-    '<div class="info-box">Ирэх 7 хоногт Publisher дээр төлөвлөсөн пост алга.</div>';
-  document.getElementById("detailModal").classList.add("open");
-}
-function future7Html(p){
-  let inner='';
-  if(p.state==="PAUSED") inner='<span class="runway low">ТҮР ЗОГССОН</span>';
-  else if(p.live) inner='<span class="runway ok">ӨДӨР БҮР БЭЛТГЭНЭ</span>';
-  else if(p.special){
-    const now=new Date(), end=new Date(now.getTime()+7*86400000);
-    const n=(p.allRows||[]).filter(r=>{
-      const t=dt(r["Scheduled Time"]);
-      return t && t>=now && t<end && String(r["Status"]||"").toUpperCase()==="READY";
-    }).length;
-    inner=n?'<span class="runway ok">'+n+' ПОСТ БЭЛЭН</span>':'<span class="runway low">ШАЛГАХ</span>';
-  } else {
-    const ready=p.future7Ready||0, img=p.future7ImagePending||0, miss=p.future7Missing||0, exp=p.future7Expected||0;
-    if(miss===0 && img===0 && exp>0) inner='<span class="runway ok">БҮРЭН БЭЛЭН · '+ready+'/'+exp+'</span>';
-    else if(miss===0 && img>0) inner='<span class="runway low">ЗУРАГ ХҮЛЭЭЖ БАЙНА · '+img+'</span>';
-    else if(miss>0) inner='<span class="runway action">ДУТУУ · '+miss+' ПОСТ</span>';
-    else inner='<span class="runway low">ШАЛГАХ</span>';
+function readySlotGroups(rows){
+  const groups=new Map();
+  for(const r of rows){
+    const d=dt(r["Scheduled Time"]);
+    const slot=d?String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"):"ЦАГ ТОДОРХОЙГҮЙ";
+    if(!groups.has(slot)) groups.set(slot,{slot,total:0,withImage:0,withoutImage:0});
+    const g=groups.get(slot);
+    g.total++;
+    if(imageState(r)==="ЗУРАГТАЙ") g.withImage++; else g.withoutImage++;
   }
-  return '<button class="linkbtn" onclick="openFuture7Preview(\''+esc(p.key)+'\')">'+inner+'</button>';
+  return [...groups.values()].sort((a,b)=>{
+    if(a.slot==="ЦАГ ТОДОРХОЙГҮЙ") return 1;
+    if(b.slot==="ЦАГ ТОДОРХОЙГҮЙ") return -1;
+    return a.slot.localeCompare(b.slot);
+  });
+}
+function readySummaryHtml(p){
+  const total=p.readyAllCount||0, withImage=p.readyWithImage||0, withoutImage=p.readyWithoutImage||0;
+  const tone=withoutImage>0?"low":"ok";
+  return "<button class=\"linkbtn runway "+tone+"\" onclick=\"openReadyPostsPreview('"+esc(p.key)+"')\">"+
+    total+" нийт · "+withImage+" зурагтай · "+withoutImage+" зураггүй</button>";
+}
+function publishTimesHtml(p){
+  const groups=p.readyTimeGroups||[];
+  if(!groups.length) return "<span class=\"muted\">—</span>";
+  const compact=groups.map(g=>g.slot==="ЦАГ ТОДОРХОЙГҮЙ"?g.slot:g.slot+" × "+g.total).join(" · ");
+  return "<button class=\"linkbtn\" title=\"READY постын цаг тус бүрийн задаргаа\" onclick=\"openReadyPostsPreview('"+esc(p.key)+"')\">"+esc(compact)+"</button>";
+}
+function openReadyPostsPreview(key){
+  const p=MODEL.find(x=>x.key===key); if(!p) return;
+  const rows=p.readyAllRows||[];
+  const groups=readySlotGroups(rows);
+  const withImage=p.readyWithImage||0, withoutImage=p.readyWithoutImage||0;
+  document.getElementById("detailTitle").textContent=p.name+" — Бэлэн постууд";
+  document.getElementById("detailSub").textContent=rows.length?rows.length+" READY пост · "+withImage+" зурагтай · "+withoutImage+" зураггүй":"READY пост алга";
+  const slotTable=groups.length
+    ? "<div class=\"detail-section\"><h4>Нийтлэх цагийн задаргаа</h4><div class=\"table-wrap\"><table class=\"mini-table\"><thead><tr><th>Цаг</th><th>Нийт пост</th><th>Зурагтай</th><th>Зураггүй</th></tr></thead><tbody>"+
+      groups.map(g=>"<tr><td class=\"mono\">"+esc(g.slot)+"</td><td>"+g.total+"</td><td>"+g.withImage+"</td><td>"+g.withoutImage+"</td></tr>").join("")+
+      "</tbody></table></div></div>"
+    : "";
+  const rowsTable=rows.length
+    ? "<div class=\"detail-section\"><h4>Бүх READY пост</h4><div class=\"table-wrap\"><table class=\"mini-table\"><thead><tr><th>Нийтлэх огноо, цаг</th><th>Гарчиг</th><th>Зураг</th><th>Төлөв</th></tr></thead><tbody>"+
+      rows.map(r=>"<tr><td class=\"mono\">"+esc(r["Scheduled Time"]||"Цаг заагаагүй")+"</td><td style=\"white-space:normal;min-width:320px\">"+esc(headlineFromCaption(r["Post Caption"]))+"</td><td>"+esc(imageState(r))+"</td><td>"+esc(String(r["Status"]||"—").toUpperCase())+"</td></tr>").join("")+
+      "</tbody></table></div></div>"
+    : "<div class=\"info-box\">Одоогоор энэ пэйжид READY төлөвтэй пост алга.</div>";
+  document.getElementById("detailBody").innerHTML=slotTable+rowsTable;
+  document.getElementById("detailModal").classList.add("open");
 }
 function runwayHtml(p) {
   if(p.special || p.live || p.state==="PAUSED") return "—";
@@ -897,8 +909,8 @@ function render() {
     <tr title="${esc(p.notes)}">
       <td><button class="linkbtn" onclick="openDetail('${esc(p.key)}')">${esc(p.name)}</button><div class="key">${esc(p.key)} · row ${p.row}${p.special?' · ТУСГАЙ АЖИЛЛАГААТАЙ':''}</div></td>
       <td>${pill(p.health)}</td>
-      <td>${future7Html(p)}</td>
-      <td class="mono">${(p.special||p.live)?'—':p.ready}</td>
+      <td>${readySummaryHtml(p)}</td>
+      <td>${publishTimesHtml(p)}</td>
       <td>${runwayHtml(p)}</td>
       <td>${refillHtml(p)}</td>
       <td class="mono">${(p.special||p.live)?'—':fmt(p.next)}</td>
@@ -914,7 +926,7 @@ function render() {
 
   document.getElementById("active").textContent=MODEL.filter(p=>p.state==="ACTIVE").length;
   document.getElementById("paused").textContent=MODEL.filter(p=>p.state==="PAUSED").length;
-  document.getElementById("ready").textContent=MODEL.filter(p=>!p.special && !p.live).reduce((s,p)=>s+(p.ready||0),0);
+  document.getElementById("ready").textContent=MODEL.reduce((s,p)=>s+(p.readyAllCount||0),0);
   const actionN=MODEL.filter(p=>p.health==="ACTION_REQUIRED").length;
   const criticalN=MODEL.filter(p=>p.health==="CRITICAL").length;
   const lowN=MODEL.filter(p=>p.health==="LOW").length;
