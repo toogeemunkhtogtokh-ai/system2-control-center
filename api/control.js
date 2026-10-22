@@ -39,7 +39,7 @@ module.exports = async function handler(req,res){
     if(p?.valueInputOption!=="USER_ENTERED" || !/^Publisher!A\d+:L\d+$/.test(range) || !rows?.length || rows.length>20){
       return res.status(409).json({ok:false,error:"REFILL_APPROVE_PAYLOAD_VERSION_MISMATCH",hint:"Refresh dashboard and try again."});
     }
-    if(rows.some(r=>!Array.isArray(r) || r.length!==12 || String(r[1]||"")!==pageKey || String(r[5]||"").toUpperCase()!=="READY")){
+    if(rows.some(r=>!Array.isArray(r) || r.length!==12 || String(r[1]||"")!==pageKey || !["READY","IMAGE_PENDING"].includes(String(r[5]||"").toUpperCase()))){
       return res.status(400).json({ok:false,error:"INVALID_READY_ROWS"});
     }
   }
