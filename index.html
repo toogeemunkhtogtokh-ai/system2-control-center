@@ -321,12 +321,17 @@ function buildModel(pages, pub) {
       const live=LIVE_PAGES.has(key);
       const enabled=String(p["Enabled"]).toUpperCase()==="TRUE";
       const rows=pub.filter(r=>r["Page Key"]===key);
-      const readyRows=rows.filter(r=>String(r["Status"]).toUpperCase()==="READY" && dt(r["Scheduled Time"]) && dt(r["Scheduled Time"])>=now)
-        .sort((a,b)=>dt(a["Scheduled Time"])-dt(b["Scheduled Time"]));
       const readyAllRows=rows.filter(r=>String(r["Status"]||"").toUpperCase()==="READY");
+      const readyScheduledRows=readyAllRows.filter(r=>dt(r["Scheduled Time"]))
+        .sort((a,b)=>dt(a["Scheduled Time"])-dt(b["Scheduled Time"]));
+      const readyRows=readyScheduledRows.filter(r=>dt(r["Scheduled Time"])>=now);
       const readyWithImage=readyAllRows.filter(r=>String(r["Image URL"]||"").trim()).length;
       const readyWithoutImage=readyAllRows.length-readyWithImage;
-      const readyTimeGroups=readySlotGroups(readyAllRows);
+      const readyTimeGroups=readySlotGroups(readyScheduledRows);
+      const windowText=p["Default Publish Window"]||"—";
+      const inferredReadySlots=readyTimeGroups.filter(g=>g.slot!=="ЦАГ ТОДОРХОЙГҮЙ").length;
+      const fallbackPostsPerDay=key==="GIVE_TV"?4:(key==="KINO_UZ"||key==="SPORTZ_MN"?2:estimatePostsPerDay(windowText));
+      const postsPerDay=(special||live)?null:(inferredReadySlots||fallbackPostsPerDay);
       const postedRows=rows.filter(r=>String(r["Status"]).toUpperCase()==="POSTED" && rowTime(r))
         .sort((a,b)=>(rowTime(b)||0)-(rowTime(a)||0));
       const last=postedRows.length ? rowTime(postedRows[0]) : null;
@@ -351,28 +356,29 @@ function buildModel(pages, pub) {
       const state = enabled ? "ACTIVE" : "PAUSED";
       const counts={};
       rows.forEach(r=>{const s=String(r["Status"]||"BLANK").toUpperCase();counts[s]=(counts[s]||0)+1;});
-      const runwayDays = (special || live || state==="PAUSED") ? null : (stockEnd ? Math.max(0,daysLeft(stockEnd)) : 0);
+      const runwayDays = (special || live || state==="PAUSED") ? null :
+        (readyScheduledRows.length===0 ? 0 :
+          (stockEnd ? Math.max(0,daysLeft(stockEnd)) :
+            (postsPerDay ? Math.ceil(readyScheduledRows.length/postsPerDay) : readyScheduledRows.length)));
       let health="OK";
       if(special) health="SPECIAL";
       else if(state==="PAUSED") health="PAUSED";
       else if(actionableErrors.length) health="ACTION_REQUIRED";
       else if(live) health="LIVE";
-      else if(!stockEnd || readyRows.length===0 || runwayDays<=3) health="ACTION_REQUIRED";
+      else if(readyScheduledRows.length===0 || runwayDays<=3) health="ACTION_REQUIRED";
       else if(runwayDays<=7) health="CRITICAL";
       else if(runwayDays<=14) health="LOW";
       const upcomingRows=rows.filter(r=>dt(r["Scheduled Time"]) && dt(r["Scheduled Time"])>=now)
         .sort((a,b)=>dt(a["Scheduled Time"])-dt(b["Scheduled Time"])).slice(0,10);
       const recentRows=[...rows].filter(r=>rowTime(r))
         .sort((a,b)=>(rowTime(b)||0)-(rowTime(a)||0)).slice(0,10);
-      const windowText=p["Default Publish Window"]||"—";
-      const postsPerDay=(special||live)?null:(key==="KINO_UZ"?2:estimatePostsPerDay(windowText));
       const future7Expected=(special||live||!postsPerDay)?null:Math.max(1,Math.round(postsPerDay*7));
       const future7Missing=future7Expected==null?null:Math.max(0,future7Expected-future7Ready-future7ImagePending);
       const refillNeedDays=(special||live||state==="PAUSED")?0:Math.max(0,REFILL_TARGET_DAYS-(runwayDays||0));
       const refillNeedPosts=postsPerDay?Math.max(0,Math.ceil(refillNeedDays*postsPerDay)):null;
       return {
         row:Number(p.__ROW_NUMBER__), key, name:p["Page Name"]||key, state, health, special, live,
-        ready:(special||live)?null:readyRows.length,readyAllRows,readyAllCount:readyAllRows.length,readyWithImage,readyWithoutImage,readyTimeGroups,next:(special||live)?null:next,stockEnd:(special||live)?null:stockEnd,last,runwayDays,
+        ready:(special||live)?null:readyScheduledRows.length,readyAllRows,readyAllCount:readyAllRows.length,readyWithImage,readyWithoutImage,readyTimeGroups,next:(special||live)?null:next,stockEnd:(special||live)?null:stockEnd,last,runwayDays,
         currentError:special?"":(actionableErrors[0]?.["Error"]||""),
         currentErrors:actionableErrors, historicalErrors, notes,
         window:windowText, lastHealthCheck:p["Last Health Check"]||"",
@@ -481,7 +487,7 @@ function healthLabel(h){
     OK:"ХЭВИЙН",
     LOW:"НӨӨЦ БАГАСАЖ БАЙНА",
     CRITICAL:"НОЦТОЙ АНХААРАХ",
-    ACTION_REQUIRED:"ЯАРАЛТАЙ АРГА ХЭМЖЭЭ",
+    ACTION_REQUIRED:"ШУУРХАЙ ШАЛГАХ",
     PAUSED:"ТҮР ЗОГССОН",
     SPECIAL:"ТУСГАЙ АЖИЛЛАГААТАЙ",
     LIVE:"ШУУД МЭДЭЭ"
@@ -937,7 +943,11 @@ function render() {
   renderRefillBoard();
 
   const alerts=[];
-  MODEL.filter(p=>p.health==="ACTION_REQUIRED").forEach(p=>alerts.push([`${p.name} — ЯАРАЛТАЙ АРГА ХЭМЖЭЭ`, p.currentError || (p.ready ? `Нөөц ${p.runwayDays} өдөр · READY: ${p.ready} · дуусах ${fmt(p.stockEnd)}` : "Ирээдүйд нийтлэх БЭЛЭН пост алга. Контентын урсгал тасрах эрсдэлтэй.")]));
+  MODEL.filter(p=>p.health==="ACTION_REQUIRED").forEach(p=>{
+    const title=p.currentError?`${p.name} — НИЙТЛЭЛИЙН АЛДАА`:`${p.name} — КОНТЕНТЫН НӨӨЦ ДУУССАН`;
+    const body=p.currentError || (p.ready ? `Нөөц ${p.runwayDays} өдөр · READY: ${p.ready} · дуусах ${fmt(p.stockEnd)}` : "Нийтлэхэд бэлэн, хуваарьтай пост алга.");
+    alerts.push([title,body]);
+  });
   MODEL.filter(p=>p.health==="CRITICAL").forEach(p=>alerts.push([`${p.name} — НОЦТОЙ АНХААРАХ`, `Нөөц ${p.runwayDays} өдөр · READY: ${p.ready} · дуусах ${fmt(p.stockEnd)}`]));
   MODEL.filter(p=>p.health==="LOW").forEach(p=>alerts.push([`${p.name} — НӨӨЦ БАГАСАЖ БАЙНА`, `Нөөц ${p.runwayDays} өдөр · READY: ${p.ready} · дуусах ${fmt(p.stockEnd)}`]));
   MODEL.filter(p=>p.state==="PAUSED").forEach(p=>alerts.push([`${p.name} — ТҮР ЗОГССОН`, "Мэдээллийн төлөв: алдаа биш, зориудаар түр зогсоосон."]));
