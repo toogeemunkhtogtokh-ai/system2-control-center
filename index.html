@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>System2 Удирдлагын төв — v2.14.0</title>
+<title>System2 Удирдлагын төв — v2.14.1</title>
 <style>
 :root {
   --bg:#07111f; --panel:#0e1a2d; --panel2:#111f35; --line:#223653; --text:#eef5ff; --muted:#91a5c3;
@@ -123,7 +123,7 @@ tr:hover td{background:#11213a}
 <header>
   <div>
     <h1>System2 Удирдлагын төв</h1>
-    <div class="sub">v2.14.0 · Бүх READY пост, зураг ба нийтлэх цагийн задаргаа</div>
+    <div class="sub">v2.14.1 · READY нөөц ба нийтлэх цагийн бодит төлөв</div>
   </div>
   <div class="top-right">
     <div class="badge live"><span id="feedPulse" class="pulse"></span><span id="feedText">Мэдээлэл…</span></div>
@@ -280,8 +280,17 @@ function parseRows(valueRange) {
   }).filter(Boolean);
 }
 function dt(s) {
-  if(!s) return null;
-  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  if(s===null || s===undefined || String(s).trim()==="") return null;
+  const raw=String(s).trim();
+  if(typeof s==="number" || /^\d{5}(?:\.\d+)?$/.test(raw)){
+    const serial=Number(s);
+    if(!Number.isFinite(serial)) return null;
+    const d=new Date(1899,11,30);
+    d.setDate(d.getDate()+Math.floor(serial));
+    d.setTime(d.getTime()+Math.round((serial-Math.floor(serial))*86400000));
+    return d;
+  }
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
   if(!m) return null;
   return new Date(+m[1], +m[2]-1, +m[3], +m[4], +m[5], 0);
 }
@@ -335,7 +344,11 @@ function buildModel(pages, pub) {
       const postedRows=rows.filter(r=>String(r["Status"]).toUpperCase()==="POSTED" && rowTime(r))
         .sort((a,b)=>(rowTime(b)||0)-(rowTime(a)||0));
       const last=postedRows.length ? rowTime(postedRows[0]) : null;
-      const allErrorRows=rows.filter(r=>String(r["Error"]||"").trim());
+      const allErrorRows=rows.filter(r=>
+        String(r["Status"]||"").toUpperCase()==="ERROR" &&
+        String(r["Error"]||"").trim() &&
+        !String(r["Published Post ID"]||"").trim()
+      );
       const actionableErrors=allErrorRows.filter(r=>{
         const t=rowTime(r);
         if(!t) return !last;
