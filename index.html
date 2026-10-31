@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer">
-<title>System2 Удирдлагын төв — v2.14.1</title>
+<title>System2 Удирдлагын төв — v2.14.2</title>
 <style>
 :root {
   --bg:#07111f; --panel:#0e1a2d; --panel2:#111f35; --line:#223653; --text:#eef5ff; --muted:#91a5c3;
@@ -123,7 +123,7 @@ tr:hover td{background:#11213a}
 <header>
   <div>
     <h1>System2 Удирдлагын төв</h1>
-    <div class="sub">v2.14.1 · READY нөөц ба нийтлэх цагийн бодит төлөв</div>
+    <div class="sub">v2.14.2 · SensusJP ердийн пэйжийн хяналттай</div>
   </div>
   <div class="top-right">
     <div class="badge live"><span id="feedPulse" class="pulse"></span><span id="feedText">Мэдээлэл…</span></div>
@@ -231,7 +231,7 @@ tr:hover td{background:#11213a}
 <script>
 const LIVE_ENDPOINT = "/api/feed";
 const CONTROL_ENDPOINT = "/api/control";
-const SPECIAL_PAGES = new Set(["SENSUS_JP"]);
+const SPECIAL_PAGES = new Set([]);
 const LIVE_PAGES = new Set(["ANZAAR_MN"]);
 let MODEL = [];
 let COMMAND_LOG = [];
